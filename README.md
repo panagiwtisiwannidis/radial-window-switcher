@@ -16,6 +16,8 @@ let go, and that window comes to the front — including a specific window or br
   in a large preview card. Minimized windows and background tabs show their last snapshot.
 - **Angle-based aiming**: the segment is chosen by the direction of the cursor, not by hitting an icon
   exactly; a small dead zone in the middle selects nothing.
+- **Close button**: the item you point at shows an × in its corner. Click it to quit the app, close the
+  window or close the tab; the ring stays open and updates.
 - **Keyboard**: Tab / Shift+Tab walk through windows and apps, Return confirms, Esc cancels.
 - **Liquid Glass** look on macOS 26 (translucent material on older versions), hover magnification and
   smooth animations.
@@ -69,6 +71,7 @@ You can reopen this window any time from the menu bar icon → **Permissions…*
 | Another app's windows | Rest on the app in the outer ring, keep going outward onto the window arc |
 | A tab of another app | Go from the window arc further out onto its tab arc |
 | Tabs of the current app | Pause briefly on one of its windows in the inner ring |
+| Close an app, window or tab | Point at it and click the **×** in its corner (an app quits; the ring stays open) |
 | Keyboard | **Tab** / **Shift+Tab** to move, **Return** to open, **Esc** to cancel |
 | Cancel | Esc, right-click, or click away from the ring |
 

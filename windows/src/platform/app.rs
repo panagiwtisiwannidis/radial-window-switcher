@@ -548,6 +548,9 @@ impl App {
                 }
             }
         }
+        if item.tab().is_none() {
+            self.model.inner_tabs_window = None;
+        }
         self.model.selection = None;
         self.dwell = None;
         self.close_hover = false;
@@ -563,10 +566,21 @@ impl App {
 
     fn reload(&mut self) {
         let snapshot = enumerate::snapshot(self.own_pid);
-        let tabs_window = self.model.inner_tabs_window;
+        let tabs_window = self
+            .model
+            .inner_tabs_window
+            .and_then(|w| self.model.inner.get(w))
+            .map(|item| item.preview_window().handle);
         self.model = RingModel::build(snapshot.front.as_ref(), &snapshot.others);
         self.model.tabs = self.tabs.known();
-        self.model.inner_tabs_window = tabs_window.filter(|w| self.model.inner_window_has_tabs(*w));
+        self.model.inner_tabs_window = tabs_window
+            .and_then(|handle| {
+                self.model
+                    .inner
+                    .iter()
+                    .position(|item| item.preview_window().handle == handle)
+            })
+            .filter(|w| self.model.inner_window_has_tabs(*w));
         self.tabs
             .refresh(windows_of(&snapshot.front, &snapshot.others));
     }

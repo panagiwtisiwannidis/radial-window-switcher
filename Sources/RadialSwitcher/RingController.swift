@@ -288,8 +288,10 @@ final class RingController {
         switch item.target {
         case .window(let window):
             WindowActivator.close(window)
+            model.innerTabsWindowIndex = nil
         case .app(let app, _):
             app.terminate()
+            model.innerTabsWindowIndex = nil
         case .tab(let tab, let window):
             if TabReader.close(tab), let id = window.windowID, var tabs = model.tabsByWindow[id] {
                 tabs.removeAll { CFEqual($0.element, tab.element) }
@@ -315,7 +317,11 @@ final class RingController {
         let fresh = await listWindows()
         cachedWindows = fresh
         guard isVisible else { return }
+        let tabsWindowID = model.innerTabsWindowIndex.flatMap { model.inner.indices.contains($0) ? model.inner[$0].previewWindow?.windowID : nil }
         fill(windows: fresh, frontmost: openFrontmost)
+        if let tabsWindowID {
+            model.innerTabsWindowIndex = model.inner.firstIndex { $0.previewWindow?.windowID == tabsWindowID }
+        }
         await refreshTabs(fresh)
     }
 

@@ -19,6 +19,8 @@ Tab), let go, and that window comes to the front.
   tabs and minimized windows show their last snapshot.
 - Glass look (blurred background, rim light), opening and hover animations.
 - Angle-based aiming, dead zone in the middle; only what's under the cursor is ever opened.
+- Close button: the item you point at shows an × in its corner; click it to quit the app, close the
+  window or close the tab. The ring stays open and updates.
 - Keyboard: Tab / Shift+Tab, Enter, Esc. Right-click or click away cancels.
 - Follows the Windows light/dark theme and accent color; works on high-DPI and multi-monitor setups;
   near screen edges the arcs rotate to stay on screen.
@@ -56,6 +58,7 @@ and run it. Windows SmartScreen may warn the first time because the executable i
 | Another app's windows | Rest on the app in the outer ring, keep going outward onto the window arc |
 | A tab of another app | From the window arc go further out onto its tab arc |
 | Tabs of the current app | Pause briefly on one of its windows in the inner ring |
+| Close an app, window or tab | Point at it and click the **×** in its corner (an app quits; the ring stays open) |
 | Keyboard | **Tab** / **Shift+Tab** to move, **Enter** to open, **Esc** to cancel |
 | Cancel | Esc, right-click, or click away from the ring |
 
