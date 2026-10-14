@@ -33,6 +33,24 @@ enum TabReader {
         AXUIElementPerformAction(tab.element, kAXPressAction as CFString)
     }
 
+    @discardableResult
+    static func close(_ tab: TabInfo) -> Bool {
+        var names: CFArray?
+        if AXUIElementCopyActionNames(tab.element, &names) == .success, let names = names as? [String],
+           let action = names.first(where: { $0.lowercased().contains("close") })
+        {
+            return AXUIElementPerformAction(tab.element, action as CFString) == .success
+        }
+        let children: [AXUIElement] = WindowEnumerator.attribute(tab.element, kAXChildrenAttribute) ?? []
+        for child in children {
+            let subrole: String? = WindowEnumerator.attribute(child, kAXSubroleAttribute)
+            if subrole == kAXCloseButtonSubrole as String {
+                return AXUIElementPerformAction(child, kAXPressAction as CFString) == .success
+            }
+        }
+        return false
+    }
+
     private static func tabs(in window: AXUIElement) -> [TabInfo] {
         var found: [TabInfo] = []
         var queue: [(element: AXUIElement, depth: Int)] = [(window, 0)]

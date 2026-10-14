@@ -35,6 +35,7 @@ const EDGE_MARGIN: f32 = 8.0;
 const RING_MARGIN: f32 = 44.0;
 const PREVIEW_GAP: f32 = 16.0;
 const TABS_STILLNESS: Duration = Duration::from_millis(150);
+const RELOAD_DELAYS: [Duration; 2] = [Duration::from_millis(250), Duration::from_millis(1000)];
 
 enum Message {
     X(Event),
@@ -76,6 +77,9 @@ struct App {
     has_moved: bool,
     last_move: Instant,
     dwell: Option<Selection>,
+    close_button: Option<(f32, f32)>,
+    close_hover: bool,
+    reloads: Vec<Instant>,
     last_frame: Instant,
     last_live: Instant,
     live_image: Option<(isize, Icon)>,
@@ -178,6 +182,9 @@ pub fn run() -> Result<(), String> {
         has_moved: false,
         last_move: Instant::now(),
         dwell: None,
+        close_button: None,
+        close_hover: false,
+        reloads: Vec::new(),
         last_frame: Instant::now(),
         last_live: Instant::now(),
         live_image: None,
@@ -368,6 +375,9 @@ impl App {
                 .collect(),
         );
         self.dwell = None;
+        self.close_button = None;
+        self.close_hover = false;
+        self.reloads.clear();
 
         let cursor = self.cursor();
         let work = self.monitor_at(cursor);
@@ -473,6 +483,7 @@ impl App {
         self.model.selection = None;
         self.model.inner_tabs_window = None;
         self.dwell = None;
+        self.reloads.clear();
         self.backdrop = None;
         let _ = conn.flush();
     }
@@ -502,6 +513,16 @@ impl App {
             }
         }
         changed |= self.check_dwell(now);
+        let hover = self.over_close_button(cursor);
+        if hover != self.close_hover {
+            self.close_hover = hover;
+            changed = true;
+        }
+        if self.reloads.first().is_some_and(|at| now >= *at) {
+            self.reloads.remove(0);
+            self.reload();
+            changed = true;
+        }
         if now.duration_since(self.last_live) >= LIVE_INTERVAL {
             self.last_live = now;
             changed |= self.refresh_live();
@@ -653,8 +674,12 @@ impl App {
             thumbnail: &thumbnail,
             backdrop: self.backdrop.as_ref(),
             motion: &self.motion,
+            close_hover: self.close_hover,
         });
         let (x, y) = self.frame_origin(frame.pixmap.width());
+        self.close_button = frame
+            .close_button
+            .map(|(bx, by)| (bx + x as f32, by + y as f32));
         self.overlay.show(self.conn.as_ref(), &frame.pixmap, x, y);
         self.targets = frame.targets;
         self.draw_card();
@@ -709,11 +734,101 @@ impl App {
             let cursor = self.cursor();
             self.update_selection(cursor);
         }
-        if self.model.selected_item().is_some() {
-            self.confirm();
-        } else {
-            self.close();
+        let cursor = self.cursor();
+        match self.model.selected_item() {
+            Some(item) if self.over_close_button(cursor) => self.close_target(&item),
+            Some(_) => self.confirm(),
+            None => self.close(),
         }
+    }
+
+    fn over_close_button(&self, cursor: (i32, i32)) -> bool {
+        self.close_button.is_some_and(|(x, y)| {
+            (cursor.0 as f32 - x).hypot(cursor.1 as f32 - y)
+                <= render::CLOSE_HIT_RADIUS * self.style.scale
+        })
+    }
+
+    fn close_window(&self, window: Window) {
+        let event = ClientMessageEvent::new(
+            32,
+            window,
+            self.atoms._NET_CLOSE_WINDOW,
+            [self.time, 2, 0, 0, 0],
+        );
+        let _ = self.conn.send_event(
+            false,
+            self.root(),
+            EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
+            event,
+        );
+    }
+
+    fn close_target(&mut self, item: &RingItem) {
+        debug(|| format!("close {}", item.full_title));
+        match &item.target {
+            Target::Window(window) => self.close_window(window.handle as Window),
+            Target::App { front } => {
+                let snapshot =
+                    windows::snapshot(self.conn.as_ref(), self.root(), &self.atoms, &mut self.apps);
+                for window in snapshot
+                    .front
+                    .iter()
+                    .chain(&snapshot.others)
+                    .flat_map(|app| &app.windows)
+                    .filter(|w| w.pid == front.pid)
+                {
+                    self.close_window(window.handle as Window);
+                }
+            }
+            Target::Tab { window, index, .. } => {
+                self.tabs.close(window.handle, *index);
+                if let Some(tabs) = self.model.tabs.get_mut(&window.handle) {
+                    if *index < tabs.len() {
+                        tabs.remove(*index);
+                    }
+                }
+            }
+        }
+        let _ = self.conn.flush();
+        self.model.selection = None;
+        self.dwell = None;
+        self.close_hover = false;
+        self.live_image = None;
+        self.open_cursor = self.cursor();
+        self.has_moved = false;
+        let now = Instant::now();
+        self.reloads = RELOAD_DELAYS.iter().map(|delay| now + *delay).collect();
+        self.redraw();
+    }
+
+    fn reload(&mut self) {
+        let snapshot =
+            windows::snapshot(self.conn.as_ref(), self.root(), &self.atoms, &mut self.apps);
+        let tabs_window = self.model.inner_tabs_window;
+        self.model = RingModel::build(snapshot.front.as_ref(), &snapshot.others);
+        self.model.tabs = self.tabs.known();
+        self.model.inner_tabs_window = tabs_window.filter(|w| self.model.inner_window_has_tabs(*w));
+        self.tabs.refresh(
+            snapshot
+                .front
+                .iter()
+                .chain(&snapshot.others)
+                .flat_map(|app| &app.windows)
+                .map(|w| WindowInfo {
+                    handle: w.handle,
+                    pid: w.pid,
+                    title: w.title.clone(),
+                })
+                .collect(),
+        );
+        debug(|| {
+            format!(
+                "reloaded: {} inner, {} outer",
+                self.model.inner.len(),
+                self.model.outer.len()
+            )
+        });
     }
 
     fn confirm(&mut self) {

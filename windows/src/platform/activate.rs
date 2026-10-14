@@ -1,11 +1,30 @@
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsIconic, SetForegroundWindow,
-    ShowWindow, SW_RESTORE,
+    BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, IsIconic, PostMessageW,
+    SetForegroundWindow, ShowWindow, SW_RESTORE, WM_CLOSE,
 };
 
-use super::hooks;
+use super::{enumerate, hooks};
+
+pub fn close(hwnd: HWND) {
+    unsafe {
+        let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
+    }
+}
+
+pub fn close_app(pid: u32, own_pid: u32) {
+    let snapshot = enumerate::snapshot(own_pid);
+    for window in snapshot
+        .front
+        .iter()
+        .chain(&snapshot.others)
+        .flat_map(|app| &app.windows)
+        .filter(|w| w.pid == pid)
+    {
+        close(HWND(window.handle as *mut std::ffi::c_void));
+    }
+}
 
 pub fn activate(hwnd: HWND) {
     unsafe {

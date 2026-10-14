@@ -7,6 +7,7 @@ x11rb::atom_manager! {
         _NET_CLIENT_LIST,
         _NET_CLIENT_LIST_STACKING,
         _NET_ACTIVE_WINDOW,
+        _NET_CLOSE_WINDOW,
         _NET_CURRENT_DESKTOP,
         _NET_WORKAREA,
         _NET_WM_NAME,

@@ -86,7 +86,8 @@ struct RingView: View {
                 || level == .inner && model.innerTabsWindowIndex == index && model.selection?.level == .outer
             let bounds = RingGeometry.segmentBounds(index: index, count: items.count)
             Segment(bounds: bounds, radii: radii, gap: items.count > 1 ? 3 : 0,
-                    state: isSelected ? .selected : isParentOfSelection ? .parent : .normal) {
+                    state: isSelected ? .selected : isParentOfSelection ? .parent : .normal,
+                    isCloseHovered: model.isCloseHovered) {
                 if case .tab = item.target {
                     TabArcLabel(item: item, thumbnail: previewThumbnail(for: item), isSelected: isSelected,
                                 width: (bounds.end - bounds.start) * (radii.lowerBound + radii.upperBound) / 2 - 8)
@@ -108,7 +109,8 @@ struct RingView: View {
                 && (model.selection?.tabIndex != nil || model.selection?.isPointing == false)
             let radii = RingGeometry.windowArcRadii
             Segment(bounds: bounds[index], radii: radii, gap: 3,
-                    state: isSelected ? .selected : isParentOfSelection ? .parent : .normal, emphasis: .tab) {
+                    state: isSelected ? .selected : isParentOfSelection ? .parent : .normal, emphasis: .tab,
+                    isCloseHovered: model.isCloseHovered) {
                 TabArcLabel(item: window, thumbnail: previewThumbnail(for: window), isSelected: isSelected,
                             width: (bounds[index].end - bounds[index].start) * (radii.lowerBound + radii.upperBound) / 2 - 8,
                             thumbnailHeight: 66)
@@ -128,7 +130,8 @@ struct RingView: View {
                 let isSelected = model.selection?.tabIndex == index
                 let bounds = arc.bounds[index]
                 let midRadius = (arc.radii.lowerBound + arc.radii.upperBound) / 2
-                Segment(bounds: bounds, radii: arc.radii, gap: 2, state: isSelected ? .selected : .normal, emphasis: .tab) {
+                Segment(bounds: bounds, radii: arc.radii, gap: 2, state: isSelected ? .selected : .normal, emphasis: .tab,
+                        isCloseHovered: model.isCloseHovered) {
                     TabArcLabel(item: tab, thumbnail: previewThumbnail(for: tab), isSelected: isSelected,
                                 width: (bounds.end - bounds.start) * midRadius - 8, thumbnailHeight: 66)
                 }
@@ -142,7 +145,8 @@ struct RingView: View {
         let bounds = RingGeometry.tabPopupBounds(innerIndex: innerIndex, innerCount: model.inner.count, tabCount: tabs.count)
         return ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
             let isSelected = model.selection == RingSelection(level: .outer, index: index)
-            Segment(bounds: bounds[index], radii: radii, gap: 3, state: isSelected ? .selected : .normal, emphasis: .tab) {
+            Segment(bounds: bounds[index], radii: radii, gap: 3, state: isSelected ? .selected : .normal, emphasis: .tab,
+                    isCloseHovered: model.isCloseHovered) {
                 TabArcLabel(item: tab, thumbnail: previewThumbnail(for: tab), isSelected: isSelected,
                             width: (bounds[index].end - bounds[index].start) * midRadius - 8, thumbnailHeight: 66)
             }
@@ -197,6 +201,7 @@ private struct Segment<Label: View>: View {
     let gap: CGFloat
     let state: SegmentState
     var emphasis: Emphasis = .normal
+    var isCloseHovered = false
     @ViewBuilder let label: () -> Label
 
     var body: some View {
@@ -213,11 +218,35 @@ private struct Segment<Label: View>: View {
             label()
                 .scaleEffect(isSelected ? emphasis.labelScale : 1)
                 .offset(labelOffset)
+            if isSelected {
+                CloseBadge(isHovered: isCloseHovered)
+                    .offset(RingGeometry.offset(angle: midAngle, radius: radii.upperBound - RingGeometry.closeButtonInset))
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+            }
         }
         .scaleEffect(isSelected ? emphasis.segmentScale : 1, anchor: segmentCenter)
         .offset(isSelected ? RingGeometry.offset(angle: midAngle, radius: emphasis.popDistance) : .zero)
         .zIndex(isSelected ? 1 : 0)
         .animation(RingAnimation.hover, value: state)
+    }
+}
+
+private struct CloseBadge: View {
+    let isHovered: Bool
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(isHovered ? Color(red: 1, green: 0.37, blue: 0.34) : Color.black.opacity(0.55))
+            Circle()
+                .stroke(Color.white.opacity(0.7), lineWidth: 1)
+            Image(systemName: "xmark")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.white)
+        }
+        .frame(width: 18, height: 18)
+        .scaleEffect(isHovered ? 1.15 : 1)
+        .animation(RingAnimation.hover, value: isHovered)
     }
 }
 

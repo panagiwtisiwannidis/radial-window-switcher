@@ -44,6 +44,7 @@ const EDGE_MARGIN: f32 = 8.0;
 const RING_MARGIN: f32 = 44.0;
 const PREVIEW_GAP: f32 = 16.0;
 const TABS_STILLNESS: f32 = 0.15;
+const RELOAD_DELAYS_MS: [u64; 2] = [250, 1000];
 
 struct App {
     main: HWND,
@@ -68,6 +69,9 @@ struct App {
     last_move: Instant,
     last_frame: Instant,
     dwell: Option<(Selection, Instant)>,
+    close_button: Option<(f32, f32)>,
+    close_hover: bool,
+    reloads: Vec<Instant>,
 }
 
 thread_local! {
@@ -153,6 +157,9 @@ fn start() -> Result<()> {
             last_move: Instant::now(),
             last_frame: Instant::now(),
             dwell: None,
+            close_button: None,
+            close_hover: false,
+            reloads: Vec::new(),
         };
         app.prewarm_tabs();
         APP.with(|a| *a.borrow_mut() = Some(app));
@@ -242,6 +249,9 @@ impl App {
         self.last_cursor = cursor;
         self.has_moved = false;
         self.dwell = None;
+        self.close_button = None;
+        self.close_hover = false;
+        self.reloads.clear();
         self.motion.reset();
         self.targets.clear();
         self.last_frame = Instant::now();
@@ -267,6 +277,7 @@ impl App {
         self.model.selection = None;
         self.model.inner_tabs_window = None;
         self.backdrop = None;
+        self.reloads.clear();
     }
 
     fn frame_origin(&self, size: i32) -> (i32, i32) {
@@ -297,6 +308,16 @@ impl App {
             }
         }
         changed |= self.check_dwell(now);
+        let hover = self.over_close_button(cursor);
+        if hover != self.close_hover {
+            self.close_hover = hover;
+            changed = true;
+        }
+        if self.reloads.first().is_some_and(|at| now >= *at) {
+            self.reloads.remove(0);
+            self.reload();
+            changed = true;
+        }
 
         let animating = self.motion.step(&self.targets, dt);
         if changed || animating {
@@ -404,8 +425,12 @@ impl App {
             thumbnail: &thumbnail,
             backdrop: self.backdrop.as_ref(),
             motion: &self.motion,
+            close_hover: self.close_hover,
         });
         let (left, top) = self.frame_origin(frame.pixmap.width() as i32);
+        self.close_button = frame
+            .close_button
+            .map(|(x, y)| (x + left as f32, y + top as f32));
         self.overlay.show(&frame.pixmap, left, top);
         self.targets = frame.targets;
 
@@ -496,11 +521,54 @@ impl App {
             }
             self.update_selection(cursor);
         }
-        if self.model.selected_item().is_some() {
-            self.confirm()
-        } else {
-            self.close()
+        match self.model.selected_item() {
+            Some(item) if self.over_close_button(cursor_pos()) => self.close_target(&item),
+            Some(_) => self.confirm(),
+            None => self.close(),
         }
+    }
+
+    fn over_close_button(&self, cursor: POINT) -> bool {
+        self.close_button.is_some_and(|(x, y)| {
+            (cursor.x as f32 - x).hypot(cursor.y as f32 - y)
+                <= render::CLOSE_HIT_RADIUS * self.style.scale
+        })
+    }
+
+    fn close_target(&mut self, item: &RingItem) {
+        match &item.target {
+            Target::Window(window) => activate::close(HWND(window.handle as *mut c_void)),
+            Target::App { front } => activate::close_app(front.pid, self.own_pid),
+            Target::Tab { window, index, .. } => {
+                self.tabs.close(window.handle, *index);
+                if let Some(tabs) = self.model.tabs.get_mut(&window.handle) {
+                    if *index < tabs.len() {
+                        tabs.remove(*index);
+                    }
+                }
+            }
+        }
+        self.model.selection = None;
+        self.dwell = None;
+        self.close_hover = false;
+        self.open_cursor = cursor_pos();
+        self.has_moved = false;
+        let now = Instant::now();
+        self.reloads = RELOAD_DELAYS_MS
+            .iter()
+            .map(|ms| now + std::time::Duration::from_millis(*ms))
+            .collect();
+        self.redraw();
+    }
+
+    fn reload(&mut self) {
+        let snapshot = enumerate::snapshot(self.own_pid);
+        let tabs_window = self.model.inner_tabs_window;
+        self.model = RingModel::build(snapshot.front.as_ref(), &snapshot.others);
+        self.model.tabs = self.tabs.known();
+        self.model.inner_tabs_window = tabs_window.filter(|w| self.model.inner_window_has_tabs(*w));
+        self.tabs
+            .refresh(windows_of(&snapshot.front, &snapshot.others));
     }
 
     fn tab(&mut self, forward: bool) {
@@ -523,6 +591,14 @@ impl App {
         }
         activate::activate(HWND(window as *mut c_void));
     }
+}
+
+fn cursor_pos() -> POINT {
+    let mut cursor = POINT::default();
+    unsafe {
+        let _ = GetCursorPos(&mut cursor);
+    }
+    cursor
 }
 
 fn windows_of(

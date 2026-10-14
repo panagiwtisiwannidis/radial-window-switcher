@@ -18,6 +18,7 @@ pub struct WindowInfo {
 enum Request {
     Refresh(Vec<WindowInfo>),
     Select(isize, usize),
+    Close(isize, usize),
 }
 
 #[derive(Clone)]
@@ -81,6 +82,12 @@ impl Tabs {
                             let _ = zbus::block_on(select(connection.connection(), tab));
                         }
                     }
+                    Request::Close(window, index) => {
+                        if let Some(tab) = elements.get(&window).and_then(|tabs| tabs.get(index)) {
+                            let result = zbus::block_on(close(connection.connection(), tab));
+                            debug(|| format!("close tab {index} of 0x{window:x}: {result:?}"));
+                        }
+                    }
                 }
             }
         });
@@ -93,6 +100,10 @@ impl Tabs {
 
     pub fn select(&self, window: isize, index: usize) {
         let _ = self.requests.send(Request::Select(window, index));
+    }
+
+    pub fn close(&self, window: isize, index: usize) {
+        let _ = self.requests.send(Request::Close(window, index));
     }
 
     pub fn known(&self) -> HashMap<isize, Vec<TabInfo>> {
@@ -255,6 +266,33 @@ async fn find_strip(
     }
     debug(|| format!("visited {visited}, near the top: {}", seen.join(" ")));
     Err("no tab strip".into())
+}
+
+async fn close(conn: &zbus::Connection, tab: &ObjectRefOwned) -> Result<(), String> {
+    let mut queue: VecDeque<(ObjectRefOwned, usize)> = VecDeque::from([(tab.clone(), 0)]);
+    while let Some((node, depth)) = queue.pop_front() {
+        let proxy = node
+            .as_accessible_proxy(conn)
+            .await
+            .map_err(|e| e.to_string())?;
+        if depth > 0 && proxy.get_role().await.ok() == Some(Role::Button) {
+            let action = proxy
+                .proxies()
+                .await
+                .map_err(|e| e.to_string())?
+                .action()
+                .await
+                .map_err(|e| e.to_string())?;
+            action.do_action(0).await.map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        if depth < 3 {
+            for child in proxy.get_children().await.unwrap_or_default() {
+                queue.push_back((child, depth + 1));
+            }
+        }
+    }
+    Err("no close button".into())
 }
 
 async fn select(

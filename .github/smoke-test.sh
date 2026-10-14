@@ -41,6 +41,29 @@ echo "window switch: $before -> $after" | tee shots/result.txt
 test "$before" = "First terminal"
 test "$after" = "Second terminal"
 
+echo "=== Close a window with its x button"
+xdotool mousemove 800 520
+sleep 0.5
+xdotool keydown alt keydown space
+sleep 1.5
+xdotool mousemove 800 600
+sleep 0.3
+xdotool mousemove 800 640
+sleep 1
+import -window root shots/2b-close-window-hover.png
+xdotool click 1
+sleep 0.3
+xdotool keyup space keyup alt
+sleep 2
+import -window root shots/2c-after-close-window.png
+xdotool key Escape
+sleep 1
+if xdotool search --name "First terminal" > /dev/null 2>&1; then
+  echo "window was not closed" | tee -a shots/result.txt
+  exit 1
+fi
+echo "window close: First terminal is gone" | tee -a shots/result.txt
+
 echo "=== Browser tabs"
 profile=$(mktemp -d)
 cat > "$profile/user.js" <<'PREFS'
@@ -89,6 +112,33 @@ sleep 2
 import -window root shots/5-after-tab-switch.png
 tab_after=$(xdotool getactivewindow getwindowname)
 echo "tab switch: $tab_before -> $tab_after" | tee -a shots/result.txt
-cat shots/app.log
 case "$tab_before" in Alpha*) ;; *) echo "unexpected starting tab"; exit 1 ;; esac
 case "$tab_after" in Gamma*) ;; *) echo "tab did not switch"; exit 1 ;; esac
+
+echo "=== Close a background tab with its x button"
+xdotool mousemove 800 520
+sleep 0.5
+xdotool keydown alt keydown space
+sleep 2.5
+xdotool mousemove 800 445
+sleep 0.2
+xdotool mousemove 800 430
+sleep 1.2
+for y in 380 320 260 220 194; do
+  xdotool mousemove 800 $y
+  sleep 0.15
+done
+sleep 1
+import -window root shots/6-close-tab-hover.png
+xdotool click 1
+sleep 0.3
+xdotool keyup space keyup alt
+sleep 3
+import -window root shots/7-after-close-tab.png
+xdotool key Escape
+sleep 1
+cat shots/app.log
+grep -q 'close tab 1 of .*Ok(())' shots/app.log
+last_tabs=$(grep 'tabs: \[' shots/app.log | tail -1)
+echo "tabs after closing: $last_tabs" | tee -a shots/result.txt
+case "$last_tabs" in *'["Alpha tab", "Gamma tab"]'*) ;; *) echo "tab was not closed"; exit 1 ;; esac

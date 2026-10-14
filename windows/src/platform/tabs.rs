@@ -11,7 +11,7 @@ use windows::Win32::System::Com::{
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationInvokePattern,
     IUIAutomationLegacyIAccessiblePattern, IUIAutomationSelectionItemPattern, TreeScope_Children,
-    TreeScope_Descendants, UIA_ControlTypePropertyId, UIA_InvokePatternId,
+    TreeScope_Descendants, UIA_ButtonControlTypeId, UIA_ControlTypePropertyId, UIA_InvokePatternId,
     UIA_LegacyIAccessiblePatternId, UIA_SelectionItemPatternId, UIA_TabControlTypeId,
     UIA_TabItemControlTypeId,
 };
@@ -38,6 +38,7 @@ const TABBED_APPS: &[&str] = &[
 enum Request {
     Refresh(Vec<(isize, u32)>),
     Select(isize, usize),
+    Close(isize, usize),
 }
 
 #[derive(Clone)]
@@ -72,6 +73,7 @@ impl Tabs {
                         }
                     }
                     Request::Select(window, index) => worker.select(window, index),
+                    Request::Close(window, index) => worker.close(window, index),
                 }
             }
         });
@@ -84,6 +86,10 @@ impl Tabs {
 
     pub fn select(&self, window: isize, index: usize) {
         let _ = self.requests.send(Request::Select(window, index));
+    }
+
+    pub fn close(&self, window: isize, index: usize) {
+        let _ = self.requests.send(Request::Close(window, index));
     }
 
     pub fn known(&self) -> HashMap<isize, Vec<TabInfo>> {
@@ -173,6 +179,37 @@ impl Worker {
                 elements.push(item);
             }
             Ok((tabs, elements))
+        }
+    }
+
+    fn close(&self, window: isize, index: usize) {
+        let Some(element) = self.elements.get(&window).and_then(|e| e.get(index)) else {
+            return;
+        };
+        unsafe {
+            let Ok(condition) = self.automation.CreatePropertyCondition(
+                UIA_ControlTypePropertyId,
+                &VARIANT::from(UIA_ButtonControlTypeId.0),
+            ) else {
+                return;
+            };
+            let Ok(button) = element.FindFirst(TreeScope_Descendants, &condition) else {
+                return;
+            };
+            if let Ok(pattern) =
+                button.GetCurrentPatternAs::<IUIAutomationInvokePattern>(UIA_InvokePatternId)
+            {
+                if pattern.Invoke().is_ok() {
+                    return;
+                }
+            }
+            if let Ok(pattern) = button
+                .GetCurrentPatternAs::<IUIAutomationLegacyIAccessiblePattern>(
+                    UIA_LegacyIAccessiblePatternId,
+                )
+            {
+                let _ = pattern.DoDefaultAction();
+            }
         }
     }
 

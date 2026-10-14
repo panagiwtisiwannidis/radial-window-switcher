@@ -17,6 +17,9 @@ pub const FRAME_RADIUS: f32 = TAB_ARC.1 + 44.0;
 const BACKDROP_ALPHA: f32 = 0.35;
 const SETTLE_TIME: f32 = 0.07;
 const OPEN_START_SCALE: f32 = 0.82;
+const CLOSE_INSET: f32 = 12.0;
+const CLOSE_RADIUS: f32 = 9.0;
+pub const CLOSE_HIT_RADIUS: f32 = 13.0;
 
 #[derive(Clone, Copy)]
 pub struct Style {
@@ -33,11 +36,20 @@ pub struct Scene<'a> {
     pub thumbnail: &'a dyn Fn(&RingItem) -> Option<Icon>,
     pub backdrop: Option<&'a Pixmap>,
     pub motion: &'a Motion,
+    pub close_hover: bool,
 }
 
 pub struct Frame {
     pub pixmap: Pixmap,
     pub targets: Vec<(String, f32)>,
+    pub close_button: Option<(f32, f32)>,
+}
+
+impl Frame {
+    pub fn close_button_hit(&self, x: f32, y: f32, scale: f32) -> bool {
+        self.close_button
+            .is_some_and(|(cx, cy)| (x - cx).hypot(y - cy) <= CLOSE_HIT_RADIUS * scale)
+    }
 }
 
 #[derive(Default)]
@@ -161,13 +173,19 @@ pub fn render(scene: &Scene) -> Frame {
         center: (size as f32 / 2.0, size as f32 / 2.0),
         scene,
         targets: Vec::new(),
+        close_button: None,
     };
     painter.draw();
     let targets = std::mem::take(&mut painter.targets);
+    let close_button = painter.close_button;
     let pixmap = painter.pixmap;
     let open = scene.motion.open.clamp(0.0, 1.0);
     if open >= 1.0 {
-        return Frame { pixmap, targets };
+        return Frame {
+            pixmap,
+            targets,
+            close_button,
+        };
     }
     let eased = 1.0 - (1.0 - open).powi(3);
     let scale = OPEN_START_SCALE + (1.0 - OPEN_START_SCALE) * eased;
@@ -185,6 +203,7 @@ pub fn render(scene: &Scene) -> Frame {
     Frame {
         pixmap: out,
         targets,
+        close_button: None,
     }
 }
 
@@ -193,6 +212,7 @@ struct Painter<'a, 'b> {
     center: (f32, f32),
     scene: &'b Scene<'a>,
     targets: Vec<(String, f32)>,
+    close_button: Option<(f32, f32)>,
 }
 
 impl Painter<'_, '_> {
@@ -444,6 +464,78 @@ impl Painter<'_, '_> {
                     alpha,
                 );
             }
+            Label::Thumbnail { .. } => {}
+        }
+        self.segment_label(s, at, size_scale, alpha, selected_text);
+        if s.selected {
+            let (bx, by) =
+                self.to_pixels(geometry::offset(s.bounds.mid(), s.radii.1 - CLOSE_INSET));
+            let mut button = Point::from_xy(bx, by);
+            transform.map_points(std::slice::from_mut(&mut button));
+            self.close_badge((button.x, button.y), h);
+            self.close_button = Some((button.x, button.y));
+        }
+    }
+
+    fn close_badge(&mut self, at: (f32, f32), h: f32) {
+        let scale = self.scene.style.scale;
+        let hovered = self.scene.close_hover;
+        let radius = CLOSE_RADIUS * scale * if hovered { 1.15 } else { 1.0 };
+        let mut pb = PathBuilder::new();
+        pb.push_circle(at.0, at.1, radius);
+        let Some(circle) = pb.finish() else { return };
+        let mut paint = Paint {
+            anti_alias: true,
+            ..Paint::default()
+        };
+        let fill = if hovered {
+            Color::from_rgba8(255, 95, 87, (255.0 * h) as u8)
+        } else {
+            Color::from_rgba8(0, 0, 0, (140.0 * h) as u8)
+        };
+        paint.set_color(fill);
+        self.pixmap.fill_path(
+            &circle,
+            &paint,
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+        paint.set_color(Color::from_rgba8(255, 255, 255, (180.0 * h) as u8));
+        let rim = Stroke {
+            width: scale.max(1.0),
+            ..Stroke::default()
+        };
+        self.pixmap
+            .stroke_path(&circle, &paint, &rim, Transform::identity(), None);
+        let arm = 3.2 * scale;
+        let mut pb = PathBuilder::new();
+        pb.move_to(at.0 - arm, at.1 - arm);
+        pb.line_to(at.0 + arm, at.1 + arm);
+        pb.move_to(at.0 + arm, at.1 - arm);
+        pb.line_to(at.0 - arm, at.1 + arm);
+        let Some(cross) = pb.finish() else { return };
+        paint.set_color(Color::from_rgba8(255, 255, 255, (255.0 * h) as u8));
+        let line = Stroke {
+            width: 1.7 * scale,
+            line_cap: tiny_skia::LineCap::Round,
+            ..Stroke::default()
+        };
+        self.pixmap
+            .stroke_path(&cross, &paint, &line, Transform::identity(), None);
+    }
+
+    fn segment_label(
+        &mut self,
+        s: &Segment,
+        at: Point,
+        size_scale: f32,
+        alpha: f32,
+        selected_text: bool,
+    ) {
+        let scale = self.scene.style.scale;
+        match &s.label {
+            Label::Icon | Label::IconAndTitle => {}
             Label::Thumbnail {
                 width,
                 thumb_height,
@@ -803,45 +895,112 @@ pub fn card_size() -> (f32, f32) {
     )
 }
 
-pub fn render_card(text: &Text, style: Style, title: &str, image: Option<&Pixmap>, icon: Option<&Pixmap>) -> Pixmap {
+pub fn render_card(
+    text: &Text,
+    style: Style,
+    title: &str,
+    image: Option<&Pixmap>,
+    icon: Option<&Pixmap>,
+) -> Pixmap {
     let scale = style.scale;
     let (w, h) = card_size();
     let (w, h) = ((w * scale).ceil() as u32, (h * scale).ceil() as u32);
     let mut pixmap = Pixmap::new(w, h).expect("card size");
     let radius = 18.0 * scale;
-    if let Some(shape) = tiny_skia::Rect::from_xywh(0.5, 0.5, w as f32 - 1.0, h as f32 - 1.0).and_then(|r| rounded_rect(r, radius)) {
-        let mut paint = Paint { anti_alias: true, ..Paint::default() };
-        paint.set_color(if style.dark { Color::from_rgba8(32, 33, 40, 242) } else { Color::from_rgba8(243, 244, 248, 245) });
-        pixmap.fill_path(&shape, &paint, FillRule::Winding, Transform::identity(), None);
-        paint.set_color(if style.dark { Color::from_rgba8(255, 255, 255, 50) } else { Color::from_rgba8(0, 0, 0, 30) });
-        pixmap.stroke_path(&shape, &paint, &Stroke { width: scale.max(1.0), ..Stroke::default() }, Transform::identity(), None);
+    if let Some(shape) = tiny_skia::Rect::from_xywh(0.5, 0.5, w as f32 - 1.0, h as f32 - 1.0)
+        .and_then(|r| rounded_rect(r, radius))
+    {
+        let mut paint = Paint {
+            anti_alias: true,
+            ..Paint::default()
+        };
+        paint.set_color(if style.dark {
+            Color::from_rgba8(32, 33, 40, 242)
+        } else {
+            Color::from_rgba8(243, 244, 248, 245)
+        });
+        pixmap.fill_path(
+            &shape,
+            &paint,
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+        paint.set_color(if style.dark {
+            Color::from_rgba8(255, 255, 255, 50)
+        } else {
+            Color::from_rgba8(0, 0, 0, 30)
+        });
+        pixmap.stroke_path(
+            &shape,
+            &paint,
+            &Stroke {
+                width: scale.max(1.0),
+                ..Stroke::default()
+            },
+            Transform::identity(),
+            None,
+        );
     }
     let (box_x, box_y) = (CARD_PADDING * scale, CARD_PADDING * scale);
     let (box_w, box_h) = (CARD_IMAGE.0 * scale, CARD_IMAGE.1 * scale);
     let fitted = |source: &Pixmap, max: f32| {
-        let fit = (box_w / source.width().max(1) as f32).min(box_h / source.height().max(1) as f32).min(max);
+        let fit = (box_w / source.width().max(1) as f32)
+            .min(box_h / source.height().max(1) as f32)
+            .min(max);
         let (iw, ih) = (source.width() as f32 * fit, source.height() as f32 * fit);
         (fit, box_x + (box_w - iw) / 2.0, box_y + (box_h - ih) / 2.0)
     };
     match (image, icon) {
         (Some(image), _) => {
             let (fit, x, y) = fitted(image, f32::MAX);
-            let paint = PixmapPaint { quality: FilterQuality::Bilinear, ..PixmapPaint::default() };
-            pixmap.draw_pixmap(0, 0, image.as_ref(), &paint, Transform::from_scale(fit, fit).post_translate(x, y), None);
+            let paint = PixmapPaint {
+                quality: FilterQuality::Bilinear,
+                ..PixmapPaint::default()
+            };
+            pixmap.draw_pixmap(
+                0,
+                0,
+                image.as_ref(),
+                &paint,
+                Transform::from_scale(fit, fit).post_translate(x, y),
+                None,
+            );
         }
         (None, Some(icon)) => {
             let size = 96.0 * scale;
             let fit = size / icon.width().max(1) as f32;
             let x = box_x + (box_w - size) / 2.0;
             let y = box_y + (box_h - size) / 2.0;
-            let paint = PixmapPaint { quality: FilterQuality::Bicubic, ..PixmapPaint::default() };
-            pixmap.draw_pixmap(0, 0, icon.as_ref(), &paint, Transform::from_scale(fit, fit).post_translate(x, y), None);
+            let paint = PixmapPaint {
+                quality: FilterQuality::Bicubic,
+                ..PixmapPaint::default()
+            };
+            pixmap.draw_pixmap(
+                0,
+                0,
+                icon.as_ref(),
+                &paint,
+                Transform::from_scale(fit, fit).post_translate(x, y),
+                None,
+            );
         }
         (None, None) => {}
     }
-    let color = if style.dark { [245, 245, 248, 255] } else { [24, 24, 28, 255] };
-    let text_style = TextStyle { size: 14.0 * scale, color, max_width: box_w, max_lines: 1, shadow: false };
-    let top = h as f32 - (CARD_TITLE_HEIGHT + CARD_PADDING / 2.0) * scale + (CARD_TITLE_HEIGHT * scale - 14.0 * scale * 1.25) / 2.0;
+    let color = if style.dark {
+        [245, 245, 248, 255]
+    } else {
+        [24, 24, 28, 255]
+    };
+    let text_style = TextStyle {
+        size: 14.0 * scale,
+        color,
+        max_width: box_w,
+        max_lines: 1,
+        shadow: false,
+    };
+    let top = h as f32 - (CARD_TITLE_HEIGHT + CARD_PADDING / 2.0) * scale
+        + (CARD_TITLE_HEIGHT * scale - 14.0 * scale * 1.25) / 2.0;
     text.draw_centered(&mut pixmap, title, w as f32 / 2.0, top, text_style);
     pixmap
 }

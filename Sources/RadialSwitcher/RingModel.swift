@@ -50,6 +50,7 @@ final class RingModel: ObservableObject {
     @Published var liveFrame: (windowID: CGWindowID, image: NSImage)?
     @Published var tabsByWindow: [CGWindowID: [TabInfo]] = [:]
     @Published var innerTabsWindowIndex: Int?
+    @Published var isCloseHovered = false
 
     var outerItems: [RingItem] {
         guard let index = innerTabsWindowIndex else { return outer }
@@ -113,6 +114,34 @@ final class RingModel: ObservableObject {
             RingItem(id: "t\(id)-\(i)", icon: icon, shortTitle: tab.title, fullTitle: tab.title,
                      isDimmed: false, target: .tab(tab, window: window))
         }
+    }
+
+    var selectedSegment: (bounds: RingGeometry.Bounds, radii: ClosedRange<CGFloat>, isFan: Bool)? {
+        guard let selection, selection.isPointing, targetItem != nil else { return nil }
+        if selection.level == .inner {
+            return (RingGeometry.segmentBounds(index: selection.index, count: inner.count), RingGeometry.innerRadii, false)
+        }
+        if let tabsWindow = innerTabsWindowIndex {
+            let bounds = RingGeometry.tabPopupBounds(innerIndex: tabsWindow, innerCount: inner.count, tabCount: outerItems.count)
+            guard bounds.indices.contains(selection.index) else { return nil }
+            return (bounds[selection.index], RingGeometry.tabPopupRadii, true)
+        }
+        let windowCount = outer[selection.index].windows.count
+        let windowBounds = windowCount >= 2
+            ? RingGeometry.windowArcBounds(appIndex: selection.index, appCount: outer.count, windowCount: windowCount)
+            : []
+        if let tabIndex = selection.tabIndex {
+            guard let arc = RingGeometry.tabArc(
+                appIndex: selection.index, appCount: outer.count, windowIndex: selection.windowIndex,
+                windowBounds: windowBounds, tabCount: tabItems(appIndex: selection.index, windowIndex: selection.windowIndex).count
+            ), arc.bounds.indices.contains(tabIndex) else { return nil }
+            return (arc.bounds[tabIndex], arc.radii, true)
+        }
+        if let windowIndex = selection.windowIndex {
+            guard windowBounds.indices.contains(windowIndex) else { return nil }
+            return (windowBounds[windowIndex], RingGeometry.windowArcRadii, true)
+        }
+        return (RingGeometry.segmentBounds(index: selection.index, count: outer.count), RingGeometry.outerRadii, false)
     }
 
     var openTabArc: (appIndex: Int, windowIndex: Int?, items: [RingItem])? {
@@ -310,6 +339,19 @@ enum RingGeometry {
         if relative < 0 { relative += 2 * .pi }
         guard relative <= span + segment else { return nil }
         return min(max(Int((relative - segment / 2) / segment), 0), bounds.count - 1)
+    }
+
+    static let closeButtonInset: CGFloat = 12
+    static let closeButtonHitRadius: CGFloat = 13
+
+    static func closeButtonOffset(bounds: Bounds, radii: ClosedRange<CGFloat>, isFan: Bool) -> CGSize {
+        let mid = (bounds.start + bounds.end) / 2
+        let button = offset(angle: mid, radius: radii.upperBound - closeButtonInset)
+        let center = offset(angle: mid, radius: (radii.lowerBound + radii.upperBound) / 2)
+        let scale: CGFloat = isFan ? 1.2 : 1
+        let pop = offset(angle: mid, radius: isFan ? 10 : 7)
+        return CGSize(width: center.width + scale * (button.width - center.width) + pop.width,
+                      height: center.height + scale * (button.height - center.height) + pop.height)
     }
 
     static func offset(angle: CGFloat, radius: CGFloat) -> CGSize {

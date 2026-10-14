@@ -213,6 +213,7 @@ fn main() {
             thumbnail: &thumb,
             backdrop: Some(&backdrop),
             motion: &motion,
+            close_hover: false,
         });
         motion.settle(&first.targets);
         motion.open = open;
@@ -224,6 +225,7 @@ fn main() {
             thumbnail: &thumb,
             backdrop: Some(&backdrop),
             motion: &motion,
+            close_hover: name == "light",
         });
         let mut canvas = background.clone();
         canvas.draw_pixmap(

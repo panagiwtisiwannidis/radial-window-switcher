@@ -21,6 +21,8 @@ final class RingController {
     private var openMouseLocation: CGPoint = .zero
     private var hasMovedSinceOpen = false
     private static let moveThreshold: CGFloat = 4
+    private var openFrontmost: NSRunningApplication?
+    private var pendingReload: Task<Void, Never>?
 
     init() {
         model.onSelectionChange = { [weak self] in self?.selectionChanged() }
@@ -74,6 +76,7 @@ final class RingController {
     func open() async {
         guard !isVisible, !isOpening else { return }
         let frontmost = NSWorkspace.shared.frontmostApplication
+        openFrontmost = frontmost
 
         if let cachedWindows {
             fill(windows: cachedWindows, frontmost: frontmost)
@@ -98,6 +101,9 @@ final class RingController {
         let tabs = await Task.detached { TabReader.tabs(of: windows) }.value
         print(String(format: "Read tabs of %d windows in %.0f ms", tabs.count, Date().timeIntervalSince(started) * 1000))
         model.tabsByWindow = tabs
+        if let index = model.innerTabsWindowIndex, !model.innerWindowHasTabs(index) {
+            model.innerTabsWindowIndex = nil
+        }
         if model.targetItem == nil { model.selection = nil }
     }
 
@@ -224,6 +230,16 @@ final class RingController {
             hasMovedSinceOpen = true
         }
         updateSelectionFromMouse()
+        let hovered = isOverCloseButton
+        if hovered != model.isCloseHovered { model.isCloseHovered = hovered }
+    }
+
+    private var isOverCloseButton: Bool {
+        guard let segment = model.selectedSegment else { return false }
+        let button = RingGeometry.closeButtonOffset(bounds: segment.bounds, radii: segment.radii, isFan: segment.isFan)
+        let mouse = NSEvent.mouseLocation
+        let x = mouse.x - screenCenter.x, y = screenCenter.y - mouse.y
+        return hypot(x - button.width, y - button.height) <= RingGeometry.closeButtonHitRadius
     }
 
     private func updateSelectionFromMouse() {
@@ -259,7 +275,48 @@ final class RingController {
 
     private func clicked() {
         if hasMovedSinceOpen { updateSelectionFromMouse() }
-        if model.selectedItem != nil { confirm() } else { close() }
+        if let item = model.selectedItem, isOverCloseButton {
+            closeTarget(item)
+        } else if model.selectedItem != nil {
+            confirm()
+        } else {
+            close()
+        }
+    }
+
+    private func closeTarget(_ item: RingItem) {
+        switch item.target {
+        case .window(let window):
+            WindowActivator.close(window)
+        case .app(let app, _):
+            app.terminate()
+        case .tab(let tab, let window):
+            if TabReader.close(tab), let id = window.windowID, var tabs = model.tabsByWindow[id] {
+                tabs.removeAll { CFEqual($0.element, tab.element) }
+                model.tabsByWindow[id] = tabs
+            }
+        }
+        model.selection = nil
+        model.isCloseHovered = false
+        stopLivePreview()
+        openMouseLocation = NSEvent.mouseLocation
+        hasMovedSinceOpen = false
+        pendingReload?.cancel()
+        pendingReload = Task { [weak self] in
+            for delay in [250, 1000] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard !Task.isCancelled, let self, self.isVisible else { return }
+                await self.reload()
+            }
+        }
+    }
+
+    private func reload() async {
+        let fresh = await listWindows()
+        cachedWindows = fresh
+        guard isVisible else { return }
+        fill(windows: fresh, frontmost: openFrontmost)
+        await refreshTabs(fresh)
     }
 
     private func confirm() {
@@ -345,6 +402,9 @@ final class RingController {
     private func close() {
         pendingLiveStart?.cancel()
         pendingLiveStart = nil
+        pendingReload?.cancel()
+        pendingReload = nil
+        model.isCloseHovered = false
         pendingTabsDwell?.cancel()
         pendingTabsDwell = nil
         model.innerTabsWindowIndex = nil
