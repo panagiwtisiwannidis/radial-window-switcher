@@ -154,12 +154,11 @@ rings, window and tab arcs, live previews and a tray icon. Prebuilt executables 
 ## Linux
 
 The Linux version lives in [`linux/`](linux/README.md): X11 sessions (Wayland doesn't allow window
-switchers), hold **Alt+Space**, with window arcs, live previews and a tray icon. Prebuilt binaries come
+switchers), hold **Alt+Space**, with window and browser-tab arcs, live previews and a tray icon. Prebuilt binaries come
 from the **Linux build** GitHub Action, which also smoke-tests it on a virtual X11 desktop.
 
 The ring layout, selection logic and drawing shared by Windows and Linux live in [`core/`](core).
 
 ## Roadmap
 
-- Linux: browser tab arcs through AT-SPI.
 - Wayland: per-desktop integrations (GNOME Shell / KWin extensions).

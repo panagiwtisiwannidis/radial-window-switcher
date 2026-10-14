@@ -4,8 +4,8 @@ The Linux version of Radial Switcher. Hold **Alt+Space** and a ring opens around
 of the app you're in on the inside, every other app on the outside. Aim with the mouse (or press Tab),
 let go, and that window comes to the front.
 
-> **Status: early.** Built, linted and smoke-tested on CI (a virtual X11 desktop opens the ring and
-> switches windows), not yet tried on a real desktop. Please report anything that doesn't work.
+> **Status: early.** Built, linted and smoke-tested on CI (a virtual X11 desktop opens the ring,
+> switches windows and switches Firefox tabs), not yet tried on a real desktop. Please report anything that doesn't work.
 
 ## Requirements
 
@@ -16,18 +16,29 @@ let go, and that window comes to the front.
 - A compositor for transparency (built into GNOME, KDE, Cinnamon; Xfce: enable it in Window Manager
   Tweaks). Without one the ring still works but has a solid background.
 - For the tray icon: KDE, or GNOME with the AppIndicator extension (preinstalled on Ubuntu).
+- For browser tabs: the accessibility bus (`at-spi2-core`, present on every mainstream desktop).
 
 ## Features
 
 - Two rings: inner = windows of the focused app, outer = all other apps.
 - Window arc: rest on an app with several windows and they fan out behind it, with thumbnails.
+- **Browser tabs**: go on from a window to its tab arc; for the app you're in, pause on one of its
+  windows and its tabs pop up above it. Background tabs show the snapshot from when they were last
+  in front.
 - Large **live** preview card of the selected window; minimized windows show their last snapshot.
 - Glass look, opening and hover animations, angle-based aiming with a dead zone.
 - Keyboard: Tab / Shift+Tab, Enter, Esc. Right-click or click away cancels.
 - Works across multiple monitors and HiDPI (`Xft.dpi`); arcs rotate to stay on screen near edges.
 - Tray icon with **Start at login** and **Quit**.
 
-Not yet on Linux: browser tab arcs (needs AT-SPI accessibility; planned).
+Tabs are read through AT-SPI accessibility. Tested with Firefox. Chromium-based browsers (Chrome, Edge,
+Brave) only expose their tabs when accessibility is on; if no tab arc shows up, run
+
+```bash
+gsettings set org.gnome.desktop.interface toolkit-accessibility true
+```
+
+and log out and back in, or start the browser with `--force-renderer-accessibility`.
 
 ## Get it
 
@@ -66,6 +77,8 @@ gsettings set org.gnome.desktop.wm.keybindings activate-window-menu "[]"
 | Open the ring | Hold the hotkey (Alt+Space) |
 | Pick a window / app | Move the cursor toward it, then release (or click) |
 | Another app's windows | Rest on the app in the outer ring, keep going outward onto the window arc |
+| A tab of another app | Go from the window arc further out onto its tab arc |
+| Tabs of the current app | Pause briefly on one of its windows in the inner ring |
 | Keyboard | **Tab** / **Shift+Tab** to move, **Enter** to open, **Esc** to cancel |
 | Cancel | Esc, right-click, or click away from the ring |
 
@@ -80,8 +93,8 @@ Switcher** exits. Without a tray, start it from your session's startup applicati
 
 ## Troubleshooting
 
-Run with `RADIAL_SWITCHER_DEBUG=1 radial-switcher` to log key events, grabs, selections and activation
-requests to the terminal.
+Run with `RADIAL_SWITCHER_DEBUG=1 radial-switcher` to log key events, grabs, selections, the tabs found
+per window and activation requests to the terminal.
 
 ## Development
 
@@ -96,6 +109,7 @@ cargo check --target x86_64-unknown-linux-gnu   # from macOS
 | `src/app.rs` | Event loop, ring state, activation |
 | `src/windows.rs`, `src/x.rs` | EWMH window list, app names (`.desktop` files) and icons |
 | `src/capture.rs`, `src/snapshots.rs` | Window capture through Composite + Render, background snapshots |
+| `src/tabs.rs` | Browser tabs over AT-SPI: reading the tab strip and selecting a tab |
 | `src/surface.rs` | Transparent override-redirect windows for the ring and the preview card |
 | `src/hotkey.rs`, `src/tray.rs`, `src/settings.rs` | Key grabs, tray icon, autostart, theme and scale |
 
