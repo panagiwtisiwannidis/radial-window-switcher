@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag for the draft release (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+
+jobs:
+  macos:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build universal app
+        run: UNIVERSAL=1 scripts/build-app.sh
+
+      - name: Package
+        run: |
+          lipo -info build/RadialSwitcher.app/Contents/MacOS/RadialSwitcher
+          ditto -c -k --keepParent build/RadialSwitcher.app "RadialSwitcher-${TAG}-macos.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: RadialSwitcher-*-macos.zip
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        working-directory: windows
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo build --release
+
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path windows/target/release/RadialSwitcher.exe -DestinationPath "RadialSwitcher-$env:TAG-windows-x64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: RadialSwitcher-*-windows-x64.zip
+          if-no-files-found: error
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        working-directory: linux
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo build --release
+
+      - name: Package
+        run: tar -C linux/target/release -czf "radial-switcher-${TAG}-linux-x86_64.tar.gz" radial-switcher
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: radial-switcher-*-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la dist
+          draft=()
+          if [ "${{ github.event_name }}" != "push" ]; then draft=(--draft); fi
+          gh release create "$TAG" dist/* \
+            --title "Radial Switcher ${TAG}" \
+            --notes-file .github/release-notes.md \
+            --target "${{ github.sha }}" \
+            "${draft[@]}"

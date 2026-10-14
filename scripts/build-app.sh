@@ -14,9 +14,14 @@ done
 APP_NAME="RadialSwitcher"
 APP="build/${APP_NAME}.app"
 
+ARCH_ARGS=()
+if [[ "${UNIVERSAL:-0}" == 1 ]]; then
+    ARCH_ARGS=(--arch arm64 --arch x86_64)
+fi
+
 echo "==> Building release binary"
-swift build -c release
-BIN_DIR="$(swift build -c release --show-bin-path)"
+swift build -c release "${ARCH_ARGS[@]+"${ARCH_ARGS[@]}"}"
+BIN_DIR="$(swift build -c release "${ARCH_ARGS[@]+"${ARCH_ARGS[@]}"}" --show-bin-path)"
 
 echo "==> Assembling ${APP}"
 STAGE_DIR="$(mktemp -d)"
