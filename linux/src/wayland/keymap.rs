@@ -59,6 +59,21 @@ fn section<'a>(text: &'a str, name: &str) -> Option<&'a str> {
     None
 }
 
+fn first_symbol(block: &str) -> Option<&str> {
+    let mut rest = block;
+    while let Some(open) = rest.find('[') {
+        let close = open + rest[open..].find(']')?;
+        let inside = rest[open + 1..close].trim();
+        let is_index = inside.chars().all(|c| c.is_ascii_digit())
+            || inside.to_ascii_lowercase().starts_with("group");
+        if !is_index {
+            return inside.split(',').next().map(str::trim);
+        }
+        rest = &rest[close + 1..];
+    }
+    None
+}
+
 impl Keymap {
     pub fn parse(text: &str) -> Option<Self> {
         let codes_text = section(text, "xkb_keycodes")?;
@@ -94,20 +109,11 @@ impl Keymap {
                 break;
             };
             let name = &rest[..=name_end];
-            let Some(open) = rest.find('[') else { break };
-            let Some(close) = rest[open..].find(']') else {
-                break;
-            };
-            let block_end = rest.find("};").unwrap_or(rest.len());
-            if open < block_end {
-                let first = rest[open + 1..open + close]
-                    .split(',')
-                    .next()
-                    .unwrap_or("")
-                    .trim();
-                if let (Some(key), Some(code)) = (key_for(first), codes.get(name)) {
-                    keys.insert(code.saturating_sub(8), key);
-                }
+            let block = &rest[name_end..rest.find("};").unwrap_or(rest.len())];
+            if let (Some(key), Some(code)) =
+                (first_symbol(block).and_then(key_for), codes.get(name))
+            {
+                keys.insert(code.saturating_sub(8), key);
             }
             rest = &rest[name_end..];
         }
