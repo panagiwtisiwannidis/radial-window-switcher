@@ -6,6 +6,7 @@ on:
       - "linux/**"
       - "core/**"
       - ".github/smoke-test.sh"
+      - ".github/wayland-smoke-test.sh"
       - ".github/workflows/linux.yml"
   workflow_dispatch:
 
@@ -42,6 +43,12 @@ jobs:
           sudo apt-get install -y -qq xvfb openbox xcompmgr xterm x11-apps xdotool imagemagick x11-xserver-utils fonts-dejavu-core at-spi2-core dbus-x11 > /dev/null
           firefox --version || true
           dbus-run-session -- bash -eux .github/smoke-test.sh
+
+      - name: Smoke test on a headless Wayland compositor (Sway)
+        if: always()
+        run: |
+          sudo apt-get install -y -qq sway foot grim wlrctl jq > /dev/null
+          bash -eux .github/wayland-smoke-test.sh
 
       - uses: actions/upload-artifact@v4
         if: always()

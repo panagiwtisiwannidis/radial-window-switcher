@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use radial_core::model::{AppWindows, Icon, WindowRef};
@@ -7,6 +6,7 @@ use tiny_skia::Pixmap;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{AtomEnum, Window};
 
+use crate::desktop::DesktopApps;
 use crate::x::{self, Atoms};
 
 const ICON_TARGET: u32 = 64;
@@ -17,29 +17,26 @@ pub struct Snapshot {
 }
 
 pub struct Apps {
-    names: HashMap<String, String>,
+    desktop: DesktopApps,
     icons: HashMap<String, Option<Icon>>,
 }
 
 impl Apps {
     pub fn load() -> Self {
         Self {
-            names: desktop_names(),
+            desktop: DesktopApps::load(),
             icons: HashMap::new(),
         }
     }
 
     fn name(&self, instance: &str, class: &str) -> String {
-        [class, instance]
-            .iter()
-            .find_map(|key| self.names.get(&key.to_lowercase()).cloned())
-            .unwrap_or_else(|| {
-                if class.is_empty() {
-                    instance.to_string()
-                } else {
-                    class.to_string()
-                }
-            })
+        self.desktop.name(&[class, instance]).unwrap_or_else(|| {
+            if class.is_empty() {
+                instance.to_string()
+            } else {
+                class.to_string()
+            }
+        })
     }
 }
 
@@ -99,10 +96,15 @@ pub fn snapshot(conn: &impl Connection, root: Window, atoms: &Atoms, apps: &mut 
         };
         if !groups.contains_key(&key) {
             order.push(key.clone());
+            let desktop = &apps.desktop;
             let icon = apps
                 .icons
                 .entry(key.clone())
-                .or_insert_with(|| window_icon(conn, window, atoms).map(Arc::new))
+                .or_insert_with(|| {
+                    window_icon(conn, window, atoms)
+                        .or_else(|| desktop.icon(&[&class, &instance]))
+                        .map(Arc::new)
+                })
                 .clone();
             groups.insert(
                 key.clone(),
@@ -168,64 +170,4 @@ pub fn window_icon(conn: &impl Connection, window: Window, atoms: &Atoms) -> Opt
         out[3] = a as u8;
     }
     Some(pixmap)
-}
-
-fn desktop_names() -> HashMap<String, String> {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    if let Some(home) = std::env::var_os("HOME") {
-        dirs.push(PathBuf::from(home).join(".local/share/applications"));
-    }
-    let data_dirs =
-        std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
-    dirs.extend(
-        data_dirs
-            .split(':')
-            .map(|d| PathBuf::from(d).join("applications")),
-    );
-    dirs.push(PathBuf::from("/var/lib/flatpak/exports/share/applications"));
-    dirs.push(PathBuf::from("/var/lib/snapd/desktop/applications"));
-
-    let mut names = HashMap::new();
-    for dir in dirs {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("desktop") {
-                continue;
-            }
-            let Ok(content) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let (mut name, mut wm_class, mut in_entry) = (None, None, false);
-            for line in content.lines() {
-                let line = line.trim();
-                if line.starts_with('[') {
-                    in_entry = line == "[Desktop Entry]";
-                    continue;
-                }
-                if !in_entry {
-                    continue;
-                }
-                if let Some(value) = line.strip_prefix("Name=") {
-                    name.get_or_insert_with(|| value.to_string());
-                } else if let Some(value) = line.strip_prefix("StartupWMClass=") {
-                    wm_class = Some(value.to_lowercase());
-                }
-            }
-            let Some(name) = name else { continue };
-            if let Some(class) = wm_class {
-                names.entry(class).or_insert_with(|| name.clone());
-            }
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                let stem = stem.to_lowercase();
-                names
-                    .entry(stem.rsplit('.').next().unwrap_or(&stem).to_string())
-                    .or_insert_with(|| name.clone());
-                names.entry(stem).or_insert(name);
-            }
-        }
-    }
-    names
 }

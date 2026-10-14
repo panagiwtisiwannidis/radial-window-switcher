@@ -17,6 +17,12 @@ x11rb = { version = "0.13", features = ["composite", "render", "randr", "xkb"] }
 ksni = { version = "0.3", features = ["blocking"] }
 atspi = { version = "0.30", default-features = false, features = ["connection", "proxies"] }
 zbus = { version = "5", default-features = false, features = ["async-io"] }
+smithay-client-toolkit = { version = "0.21", default-features = false, features = ["calloop"] }
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+resvg = { version = "0.45", default-features = false }
+serde_json = "1"
 
 [profile.release]
 opt-level = 3
