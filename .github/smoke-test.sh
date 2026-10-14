@@ -1,0 +1,92 @@
+export DISPLAY=:99
+export GNOME_ACCESSIBILITY=1
+export NO_AT_BRIDGE=0
+mkdir -p shots
+
+Xvfb :99 -screen 0 1600x1000x24 +extension Composite +extension RANDR &
+sleep 2
+xsetroot -solid "#3b5b8a"
+/usr/libexec/at-spi-bus-launcher --launch-immediately &
+sleep 1
+gdbus call --session --dest org.a11y.Bus --object-path /org/a11y/bus \
+  --method org.freedesktop.DBus.Properties.Set org.a11y.Status IsEnabled "<true>" || true
+
+RADIAL_SWITCHER_DEBUG=1 ./linux/target/release/radial-switcher > shots/app.log 2>&1 &
+sleep 2
+openbox &
+sleep 1
+xcompmgr &
+
+echo "=== Window switching"
+xclock -geometry 200x200+1300+60 &
+xterm -T "Second terminal" -geometry 90x30+700+300 -e sh -c 'echo SECOND; sleep 900' &
+sleep 1
+xterm -T "First terminal" -geometry 90x30+80+80 -e sh -c 'echo FIRST; sleep 900' &
+sleep 3
+xdotool search --name "First terminal" windowactivate --sync
+sleep 1
+before=$(xdotool getactivewindow getwindowname)
+xdotool mousemove 800 520
+sleep 0.5
+xdotool keydown alt keydown space
+sleep 1.5
+import -window root shots/1-ring-open.png
+xdotool mousemove 800 610
+sleep 1
+import -window root shots/2-other-window-selected.png
+xdotool keyup space keyup alt
+sleep 1.5
+after=$(xdotool getactivewindow getwindowname)
+echo "window switch: $before -> $after" | tee shots/result.txt
+test "$before" = "First terminal"
+test "$after" = "Second terminal"
+
+echo "=== Browser tabs"
+profile=$(mktemp -d)
+cat > "$profile/user.js" <<'PREFS'
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.aboutwelcome.enabled", false);
+user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("startup.homepage_welcome_url", "");
+user_pref("datareporting.policy.dataSubmissionEnabled", false);
+user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
+user_pref("browser.tabs.warnOnClose", false);
+user_pref("browser.startup.page", 0);
+PREFS
+firefox --new-instance --profile "$profile" -width 900 -height 650 \
+  "data:text/html,<title>Alpha tab</title><h1>Alpha</h1>" \
+  "data:text/html,<title>Beta tab</title><h1>Beta</h1>" \
+  "data:text/html,<title>Gamma tab</title><h1>Gamma</h1>" > shots/firefox.log 2>&1 &
+for i in $(seq 1 60); do
+  xdotool search --name "Mozilla Firefox" > /dev/null 2>&1 && break
+  sleep 1
+done
+sleep 8
+xdotool search --name "Mozilla Firefox" | head -1 | xargs -I{} xdotool windowactivate --sync {}
+sleep 1
+xdotool key ctrl+1
+sleep 1
+tab_before=$(xdotool getactivewindow getwindowname)
+xdotool mousemove 800 520
+sleep 0.5
+xdotool keydown alt keydown space
+sleep 2.5
+xdotool mousemove 800 445
+sleep 0.2
+xdotool mousemove 800 430
+sleep 1.2
+import -window root shots/3-tab-popup.png
+for point in "830 360" "860 310" "880 285" "894 270"; do
+  xdotool mousemove $point
+  sleep 0.15
+done
+sleep 1
+import -window root shots/4-tab-selected.png
+xdotool keyup space keyup alt
+sleep 2
+import -window root shots/5-after-tab-switch.png
+tab_after=$(xdotool getactivewindow getwindowname)
+echo "tab switch: $tab_before -> $tab_after" | tee -a shots/result.txt
+cat shots/app.log
+case "$tab_before" in Alpha*) ;; *) echo "unexpected starting tab"; exit 1 ;; esac
+case "$tab_after" in Gamma*) ;; *) echo "tab did not switch"; exit 1 ;; esac

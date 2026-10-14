@@ -2,8 +2,8 @@ use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use radial_core::geometry::{Area, Geometry, Selection, OUTER, WINDOW_ARC};
-use radial_core::model::{Icon, RingItem, RingModel};
+use radial_core::geometry::{Area, Geometry, Level, Selection, DEAD_ZONE, INNER, OUTER, TAB_ARC};
+use radial_core::model::{Icon, RingItem, RingModel, Target};
 use radial_core::render::{self, Motion, Scene, Style};
 use radial_core::text::Text;
 use tiny_skia::Pixmap;
@@ -22,6 +22,7 @@ use crate::hotkey::{self, Keys};
 use crate::settings;
 use crate::snapshots::Snapshots;
 use crate::surface::Surface;
+use crate::tabs::{Tabs, WindowInfo};
 use crate::tray;
 use crate::windows::{self, Apps};
 use crate::x::{self, Atoms};
@@ -33,10 +34,12 @@ const MOVE_THRESHOLD: f32 = 4.0;
 const EDGE_MARGIN: f32 = 8.0;
 const RING_MARGIN: f32 = 44.0;
 const PREVIEW_GAP: f32 = 16.0;
+const TABS_STILLNESS: Duration = Duration::from_millis(150);
 
 enum Message {
     X(Event),
     Tray(tray::Command),
+    TabsReady,
 }
 
 #[derive(Clone, Copy)]
@@ -56,6 +59,7 @@ struct App {
     card: Surface,
     capturer: Option<Capturer>,
     snapshots: Snapshots,
+    tabs: Tabs,
     apps: Apps,
     text: Text,
     model: RingModel,
@@ -70,6 +74,8 @@ struct App {
     open_cursor: (i32, i32),
     last_cursor: (i32, i32),
     has_moved: bool,
+    last_move: Instant,
+    dwell: Option<Selection>,
     last_frame: Instant,
     last_live: Instant,
     live_image: Option<(isize, Icon)>,
@@ -126,6 +132,10 @@ pub fn run() -> Result<(), String> {
 
     let (sender, receiver) = channel::<Message>();
     let _tray = tray::start(tray_sender(sender.clone()), label);
+    let tabs_sender = sender.clone();
+    let tabs = Tabs::start(move || {
+        let _ = tabs_sender.send(Message::TabsReady);
+    });
     let reader = conn.clone();
     let events = sender.clone();
     std::thread::spawn(move || {
@@ -142,6 +152,7 @@ pub fn run() -> Result<(), String> {
         card: Surface::new(conn.as_ref(), &screen).map_err(|e| e.to_string())?,
         capturer: Capturer::new(conn.as_ref()),
         snapshots: Snapshots::start(),
+        tabs,
         apps: Apps::load(),
         text,
         model: RingModel::default(),
@@ -165,6 +176,8 @@ pub fn run() -> Result<(), String> {
         open_cursor: (0, 0),
         last_cursor: (0, 0),
         has_moved: false,
+        last_move: Instant::now(),
+        dwell: None,
         last_frame: Instant::now(),
         last_live: Instant::now(),
         live_image: None,
@@ -180,6 +193,7 @@ pub fn run() -> Result<(), String> {
         match receiver.recv_timeout(timeout) {
             Ok(Message::X(event)) => app.handle(event),
             Ok(Message::Tray(tray::Command::Quit)) => break,
+            Ok(Message::TabsReady) => app.tabs_ready(),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => break,
         }
@@ -339,6 +353,21 @@ impl App {
         let snapshot =
             windows::snapshot(self.conn.as_ref(), self.root(), &self.atoms, &mut self.apps);
         self.model = RingModel::build(snapshot.front.as_ref(), &snapshot.others);
+        self.model.tabs = self.tabs.known();
+        self.tabs.refresh(
+            snapshot
+                .front
+                .iter()
+                .chain(&snapshot.others)
+                .flat_map(|app| &app.windows)
+                .map(|w| WindowInfo {
+                    handle: w.handle,
+                    pid: w.pid,
+                    title: w.title.clone(),
+                })
+                .collect(),
+        );
+        self.dwell = None;
 
         let cursor = self.cursor();
         let work = self.monitor_at(cursor);
@@ -442,6 +471,8 @@ impl App {
         self.overlay.hide(conn);
         self.card.hide(conn);
         self.model.selection = None;
+        self.model.inner_tabs_window = None;
+        self.dwell = None;
         self.backdrop = None;
         let _ = conn.flush();
     }
@@ -462,6 +493,7 @@ impl App {
         let mut changed = false;
         if cursor != self.last_cursor {
             self.last_cursor = cursor;
+            self.last_move = now;
             let moved = ((cursor.0 - self.open_cursor.0) as f32)
                 .hypot((cursor.1 - self.open_cursor.1) as f32);
             if self.has_moved || moved >= MOVE_THRESHOLD * self.style.scale {
@@ -469,6 +501,7 @@ impl App {
                 changed |= self.update_selection(cursor);
             }
         }
+        changed |= self.check_dwell(now);
         if now.duration_since(self.last_live) >= LIVE_INTERVAL {
             self.last_live = now;
             changed |= self.refresh_live();
@@ -483,28 +516,103 @@ impl App {
         let scale = self.style.scale;
         let dx = (cursor.0 as f32 - self.center.0) / scale;
         let dy = (self.center.1 - cursor.1 as f32) / scale;
-        let selection: Option<Selection> = self.geometry.selection(
-            dx,
-            dy,
-            self.model.inner.len(),
-            &self.model.outer_window_counts(),
-            &|_, _| 0,
-            self.model.selection,
-        );
+        let selection = match self.model.inner_tabs_window {
+            Some(window) => {
+                let tab_count = self.model.inner_tab_items(window).len();
+                let tab_selection = self.geometry.tab_popup_selection(
+                    dx,
+                    dy,
+                    self.model.inner.len(),
+                    window,
+                    tab_count,
+                );
+                let distance = dx.hypot(dy);
+                let ring_boundary = (INNER.1 + OUTER.0) / 2.0;
+                if tab_selection.is_none() && distance > ring_boundary && distance <= OUTER.1 {
+                    self.model.inner_tabs_window = None;
+                    self.normal_selection(dx, dy, None)
+                } else {
+                    tab_selection
+                }
+            }
+            None => self.normal_selection(dx, dy, self.model.selection),
+        };
         if selection == self.model.selection {
             return false;
         }
         debug(|| format!("selection {selection:?}"));
         self.model.selection = selection;
+        self.update_tab_mode(dx.hypot(dy) <= DEAD_ZONE);
         self.live_image = None;
         self.last_live = Instant::now() - LIVE_INTERVAL;
         true
+    }
+
+    fn normal_selection(&self, dx: f32, dy: f32, current: Option<Selection>) -> Option<Selection> {
+        let model = &self.model;
+        self.geometry.selection(
+            dx,
+            dy,
+            model.inner.len(),
+            &model.outer_window_counts(),
+            &|app, window| model.tab_items(app, window).len(),
+            current,
+        )
+    }
+
+    fn update_tab_mode(&mut self, in_dead_zone: bool) {
+        let selection = self.model.selection;
+        if let Some(window) = self.model.inner_tabs_window {
+            let on_tabs = selection.is_some_and(|s| s.level == Level::Outer);
+            let on_window = selection.is_some_and(|s| s.level == Level::Inner && s.index == window);
+            if on_tabs || on_window || (selection.is_none() && !in_dead_zone) {
+                return;
+            }
+            self.model.inner_tabs_window = None;
+        }
+        self.dwell = selection
+            .filter(|s| s.level == Level::Inner && self.model.inner_window_has_tabs(s.index));
+    }
+
+    fn check_dwell(&mut self, now: Instant) -> bool {
+        let Some(selection) = self.dwell else {
+            return false;
+        };
+        if self.model.selection != Some(selection) {
+            self.dwell = None;
+            return false;
+        }
+        if now.duration_since(self.last_move) < TABS_STILLNESS {
+            return false;
+        }
+        self.dwell = None;
+        self.model.inner_tabs_window = Some(selection.index);
+        debug(|| format!("tab pop-up for inner window {}", selection.index));
+        true
+    }
+
+    fn tabs_ready(&mut self) {
+        self.model.tabs = self.tabs.known();
+        debug(|| format!("tabs for {} windows", self.model.tabs.len()));
+        if !self.open {
+            return;
+        }
+        if self.model.target_item().is_none() {
+            self.model.selection = None;
+        }
+        if self.dwell.is_none() && self.model.inner_tabs_window.is_none() {
+            self.update_tab_mode(false);
+        }
+        self.redraw();
     }
 
     fn refresh_live(&mut self) -> bool {
         let Some(item) = self.model.selected_item() else {
             return false;
         };
+        if item.tab().is_some_and(|tab| !tab.selected) {
+            return false;
+        }
         let handle = item.preview_window().handle;
         let Some(capturer) = &self.capturer else {
             return false;
@@ -515,13 +623,24 @@ impl App {
             return false;
         };
         let image = Arc::new(image);
-        self.snapshots.update(handle, image.clone());
+        let title = x::text(self.conn.as_ref(), handle as Window, &self.atoms);
+        self.snapshots.update(handle, title, image.clone());
         self.live_image = Some((handle, image));
         true
     }
 
     fn thumbnail(&self, item: &RingItem) -> Option<Icon> {
-        self.snapshots.window(item.preview_window().handle)
+        let handle = item.preview_window().handle;
+        match &item.target {
+            Target::Tab { tab, .. } => self.snapshots.tab(handle, &tab.title).or_else(|| {
+                if tab.selected {
+                    self.snapshots.window(handle)
+                } else {
+                    None
+                }
+            }),
+            _ => self.snapshots.window(handle),
+        }
     }
 
     fn redraw(&mut self) {
@@ -547,9 +666,10 @@ impl App {
             return;
         };
         let handle = item.preview_window().handle;
+        let background_tab = item.tab().is_some_and(|tab| !tab.selected);
         let image = match &self.live_image {
-            Some((h, image)) if *h == handle => Some(image.clone()),
-            _ => self.snapshots.window(handle),
+            Some((h, image)) if *h == handle && !background_tab => Some(image.clone()),
+            _ => self.thumbnail(&item),
         };
         let card = render::render_card(
             &self.text,
@@ -564,7 +684,7 @@ impl App {
 
     fn card_origin(&self, w: f32, h: f32) -> (i32, i32) {
         let scale = self.style.scale;
-        let distance = (WINDOW_ARC.1 + PREVIEW_GAP) * scale + w / 2.0;
+        let distance = (TAB_ARC.1 + PREVIEW_GAP) * scale + w / 2.0;
         let margin = EDGE_MARGIN * scale;
         let (left, right) = (self.work.x as f32, (self.work.x + self.work.width) as f32);
         let (top, bottom) = (self.work.y as f32, (self.work.y + self.work.height) as f32);
@@ -603,6 +723,9 @@ impl App {
         };
         self.close();
         let window = item.preview_window().handle as Window;
+        if let Target::Tab { index, .. } = item.target {
+            self.tabs.select(window as isize, index);
+        }
         let event = ClientMessageEvent::new(
             32,
             window,

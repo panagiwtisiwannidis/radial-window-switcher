@@ -4,6 +4,7 @@ mod hotkey;
 mod settings;
 mod snapshots;
 mod surface;
+mod tabs;
 mod tray;
 mod windows;
 mod x;
