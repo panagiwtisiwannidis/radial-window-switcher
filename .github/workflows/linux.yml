@@ -80,7 +80,7 @@ jobs:
           name: radial-switcher-linux-for-tests
 
       - name: Install Hyprland
-        run: pacman -Syu --noconfirm --needed hyprland foot grim wlrctl wtype jq mesa ttf-dejavu > /dev/null
+        run: pacman -Syu --noconfirm --needed hyprland foot grim wtype jq mesa ttf-dejavu > /dev/null
 
       - name: Smoke test on a headless Hyprland
         run: bash -eux .github/hyprland-smoke-test.sh

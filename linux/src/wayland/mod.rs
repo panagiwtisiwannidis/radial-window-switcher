@@ -3,7 +3,7 @@ mod ipc;
 mod keymap;
 mod toplevels;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -108,6 +108,8 @@ pub struct State {
     scale: i32,
     shift: bool,
     keymap: Keymap,
+    held: HashSet<u32>,
+    pressed: HashSet<u32>,
     pending: Option<RingModel>,
     qh: QueueHandle<State>,
     loop_handle: LoopHandle<'static, State>,
@@ -200,6 +202,8 @@ pub fn run() -> Result<(), String> {
         scale: 1,
         shift: false,
         keymap: Keymap::default(),
+        held: HashSet::new(),
+        pressed: HashSet::new(),
         pending: None,
         qh,
         loop_handle,
@@ -646,7 +650,16 @@ impl State {
 
     fn key(&mut self, code: u32, pressed: bool) {
         let key = self.keymap.key(code);
-        debug(|| format!("wayland: key {code} {key:?} pressed {pressed}"));
+        let press_seen = if pressed {
+            self.pressed.insert(code);
+            true
+        } else {
+            self.pressed.remove(code) || self.held.remove(&code)
+        };
+        debug(|| {
+            format!("wayland: key {code} {key:?} pressed {pressed} (press seen {press_seen})")
+        });
+        let acts = pressed || !press_seen;
         match key {
             Some(Key::Shift) => self.shift = pressed,
             _ if !self.started => {}
@@ -655,12 +668,12 @@ impl State {
                     self.confirm();
                 }
             }
-            Some(Key::Tab) if pressed => {
+            Some(Key::Tab) if acts => {
                 self.ring.model.move_selection(!self.shift);
                 self.redraw();
             }
-            Some(Key::Enter) if pressed => self.confirm(),
-            Some(Key::Escape) if pressed => self.close(),
+            Some(Key::Enter) if acts => self.confirm(),
+            Some(Key::Escape) if acts => self.close(),
             _ => {}
         }
     }
@@ -693,11 +706,17 @@ impl Dispatch2<wl_keyboard::WlKeyboard, State> for KeyboardData {
                 }
             }
             wl_keyboard::Event::Enter { keys, .. } => {
-                state.shift = keys
+                state.held = keys
                     .as_chunks::<4>()
                     .0
                     .iter()
-                    .any(|c| state.keymap.key(u32::from_ne_bytes(*c)) == Some(Key::Shift));
+                    .map(|c| u32::from_ne_bytes(*c))
+                    .collect();
+                state.pressed.clear();
+                state.shift = state
+                    .held
+                    .iter()
+                    .any(|code| state.keymap.key(*code) == Some(Key::Shift));
             }
             wl_keyboard::Event::Key {
                 key,

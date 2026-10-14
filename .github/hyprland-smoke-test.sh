@@ -51,8 +51,7 @@ RADIAL_SWITCHER_DEBUG=1 $BIN > shots/hyprland/app.log 2>&1 &
 sleep 2
 cat shots/hyprland/app.log
 
-wlrctl pointer move -3000 -3000
-wlrctl pointer move 800 500
+hyprctl dispatch movecursor 800 500
 sleep 0.5
 before=$(focused)
 grim shots/hyprland/0-desktop.png || true
@@ -60,9 +59,9 @@ grim shots/hyprland/0-desktop.png || true
 $BIN show
 sleep 1.5
 grim shots/hyprland/1-ring-open.png || true
-wlrctl pointer move 0 45
+hyprctl dispatch movecursor 800 545
 sleep 0.2
-wlrctl pointer move 0 45
+hyprctl dispatch movecursor 800 590
 sleep 1
 grim shots/hyprland/2-other-window-selected.png || true
 wtype -k Return
