@@ -8,8 +8,7 @@ pub fn app_icon(size: u32) -> Pixmap {
     let center = (512.0 * s, 512.0 * s);
 
     let tile = rounded(100.0 * s, 100.0 * s, 824.0 * s, 185.0 * s);
-    let mut paint = Paint::default();
-    paint.anti_alias = true;
+    let mut paint = Paint { anti_alias: true, ..Paint::default() };
     paint.shader = LinearGradient::new(
         Point::from_xy(0.0, 100.0 * s),
         Point::from_xy(0.0, 924.0 * s),
@@ -28,8 +27,7 @@ pub fn app_icon(size: u32) -> Pixmap {
 
     let mut hub = PathBuilder::new();
     hub.push_circle(center.0, center.1, 82.0 * s);
-    let mut paint = Paint::default();
-    paint.anti_alias = true;
+    let mut paint = Paint { anti_alias: true, ..Paint::default() };
     paint.set_color(Color::from_rgba8(255, 255, 255, 230));
     pixmap.fill_path(&hub.finish().unwrap(), &paint, FillRule::Winding, Transform::identity(), None);
     pixmap
@@ -71,8 +69,7 @@ fn ring(pixmap: &mut Pixmap, center: (f32, f32), count: usize, inner: f32, outer
         }
         pb.close();
         let path = pb.finish().unwrap();
-        let mut paint = Paint::default();
-        paint.anti_alias = true;
+        let mut paint = Paint { anti_alias: true, ..Paint::default() };
         paint.set_color(if Some(i) == highlighted {
             Color::from_rgba8(77, 143, 255, 255)
         } else {

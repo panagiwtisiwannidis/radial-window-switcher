@@ -11,9 +11,11 @@ const FONT_PATHS: &[&str] = &[
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ];
 
+type GlyphCache = RefCell<HashMap<(char, u32), (Metrics, Vec<u8>)>>;
+
 pub struct Text {
     font: Font,
-    glyphs: RefCell<HashMap<(char, u32), (Metrics, Vec<u8>)>>,
+    glyphs: GlyphCache,
 }
 
 #[derive(Clone, Copy)]

@@ -23,7 +23,7 @@ jobs:
         run: cargo test --release
 
       - name: Lint
-        run: cargo clippy --release -- -D warnings -A clippy::field_reassign_with_default -A clippy::type_complexity -A clippy::manual_checked_ops -A clippy::chunks_exact_with_const_size
+        run: cargo clippy --release --all-targets -- -D warnings
 
       - name: Build
         run: cargo build --release

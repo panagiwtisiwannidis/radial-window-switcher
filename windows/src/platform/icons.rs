@@ -126,7 +126,7 @@ pub fn to_hicon(pixmap: &Pixmap) -> Option<HICON> {
         let target = std::slice::from_raw_parts_mut(bits as *mut u8, (width * height * 4) as usize);
         for (src, dst) in pixmap.data().chunks(4).zip(target.chunks_mut(4)) {
             let a = src[3] as u32;
-            let straight = |c: u8| if a == 0 { 0 } else { (c as u32 * 255 / a).min(255) as u8 };
+            let straight = |c: u8| (c as u32 * 255).checked_div(a).map_or(0, |v| v.min(255) as u8);
             dst[0] = straight(src[2]);
             dst[1] = straight(src[1]);
             dst[2] = straight(src[0]);

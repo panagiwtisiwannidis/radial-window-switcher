@@ -79,7 +79,7 @@ impl Overlay {
         let mut bits: *mut c_void = std::ptr::null_mut();
         if let Ok(bitmap) = CreateDIBSection(screen, &info, DIB_RGB_COLORS, &mut bits, None, 0) {
             let target = std::slice::from_raw_parts_mut(bits as *mut u8, (width * height * 4) as usize);
-            for (src, dst) in pixmap.data().chunks_exact(4).zip(target.chunks_exact_mut(4)) {
+            for (src, dst) in pixmap.data().as_chunks::<4>().0.iter().zip(target.as_chunks_mut::<4>().0.iter_mut()) {
                 dst[0] = src[2];
                 dst[1] = src[1];
                 dst[2] = src[0];
