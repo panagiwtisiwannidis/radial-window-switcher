@@ -10,6 +10,12 @@ if arguments.isEmpty {
     app.delegate = delegate
     app.setActivationPolicy(.accessory)
     app.run()
+} else if arguments.first == "demo" {
+    let app = NSApplication.shared
+    let delegate = DemoDelegate(scene: arguments.dropFirst().first ?? "windows")
+    app.delegate = delegate
+    app.setActivationPolicy(.accessory)
+    app.run()
 } else {
     Task {
         exit(await DebugCLI.run(arguments))

@@ -5,6 +5,14 @@ A radial window switcher for macOS (this page), Windows (see [`windows/`](window
 the app you're in on the inside, every other open app on the outside. Aim with the mouse (or press Tab),
 let go, and that window comes to the front — including a specific window or browser tab of another app.
 
+<p align="center">
+  <img src="docs/screenshots/macos-windows.png" alt="Radial Switcher: the current app's windows on the inner ring, other apps on the outer ring, and the windows of the app under the cursor fanned out above it, with a large preview" width="760">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/macos-tabs.png" alt="Radial Switcher: resting on a Safari window pops up its tabs, each with a thumbnail, and the tab under the cursor is previewed" width="760">
+</p>
+
 ## Features
 
 - **Two rings**: inner ring = windows of the frontmost app, outer ring = all other running apps (apps
@@ -98,7 +106,11 @@ swift build
 swift run                                   # run from the terminal (permissions then go to your terminal app)
 swift run RadialSwitcher list               # print all windows the switcher sees
 swift run RadialSwitcher focus <windowID>   # bring one window to the front
+swift run RadialSwitcher demo windows       # show the ring with sample apps and windows (also: tabs, apps)
 ```
+
+The screenshots above come from the demo: run it, then capture just its window, which keeps the
+transparent background (`screencapture -o -l <windowID> shot.png`; Esc closes the demo).
 
 Only one copy can own ⌥Space at a time: quit the installed app before `swift run`.
 
@@ -121,6 +133,7 @@ iconutil -c icns /tmp/AppIcon.iconset -o Support/AppIcon.icns
 | `Sources/RadialSwitcher/` | The app (Swift, AppKit + SwiftUI) |
 | `Support/Info.plist`, `Support/AppIcon.icns` | App bundle metadata and icon |
 | `scripts/build-app.sh` | Build, package, sign, install |
+| `docs/screenshots/` | README screenshots (made with the demo, sample content only) |
 | `windows/` | The Windows version (Rust) |
 | `linux/` | The Linux/X11 version (Rust) |
 | `core/` | Ring logic and drawing shared by Windows and Linux |

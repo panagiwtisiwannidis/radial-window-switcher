@@ -148,8 +148,23 @@ final class RingController {
         confirm()
     }
 
-    private func show() {
-        let mouse = NSEvent.mouseLocation
+    func presentDemo(_ demo: DemoContent) {
+        guard let screen = NSScreen.main else { return }
+        model.inner = demo.inner
+        model.outer = demo.outer
+        model.tabsByWindow = demo.tabs
+        model.thumbnails = demo.thumbnails
+        model.tabThumbnails = demo.tabThumbnails
+        show(at: CGPoint(x: screen.frame.midX, y: screen.frame.midY))
+        mouseTimer?.invalidate()
+        mouseTimer = nil
+        model.innerTabsWindowIndex = demo.tabsWindowIndex
+        model.selection = demo.selection
+        pendingTabsDwell?.cancel()
+        pendingTabsDwell = nil
+    }
+
+    private func show(at mouse: CGPoint = NSEvent.mouseLocation) {
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         guard let screen else { return }
 
