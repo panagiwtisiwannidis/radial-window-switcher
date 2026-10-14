@@ -117,3 +117,7 @@ cargo check --target x86_64-unknown-linux-gnu   # from macOS
 | `src/hotkey.rs`, `src/tray.rs`, `src/settings.rs` | Key grabs, tray icon, autostart, theme and scale |
 
 The ring itself (layout, selection, drawing) is shared with the Windows version in [`../core`](../core).
+
+## License
+
+Copyright © 2026 Panagiotis Ioannidis. All rights reserved. See [LICENSE](../LICENSE).

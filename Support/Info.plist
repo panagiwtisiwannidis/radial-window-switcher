@@ -28,6 +28,8 @@
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 Panagiotis Ioannidis. All rights reserved.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>

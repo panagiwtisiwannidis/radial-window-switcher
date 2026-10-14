@@ -2,6 +2,7 @@
 name = "radial-core"
 version = "0.1.0"
 edition = "2021"
+license-file = "../LICENSE"
 description = "Ring layout, selection model and rendering shared by Radial Switcher's Windows and Linux versions"
 publish = false
 

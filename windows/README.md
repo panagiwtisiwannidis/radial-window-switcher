@@ -91,3 +91,7 @@ cargo check --target x86_64-pc-windows-msvc   # type-check the Windows code from
 | `src/geometry.rs`, `src/model.rs` | Ring layout and selection logic, shared with future ports |
 | `src/render.rs`, `src/text.rs`, `src/icon.rs` | Drawing the ring (tiny-skia), text and the app icon |
 | `src/platform/` | Windows integration: hooks, window list, activation, overlay, preview, tray, snapshots, UI Automation tabs |
+
+## License
+
+Copyright © 2026 Panagiotis Ioannidis. All rights reserved. See [LICENSE](../LICENSE).

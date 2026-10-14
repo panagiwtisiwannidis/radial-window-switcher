@@ -7,7 +7,11 @@ fn main() {
             .set_icon("assets/app.ico")
             .set("ProductName", "Radial Switcher")
             .set("FileDescription", "Radial Switcher")
-            .set("CompanyName", "Radial Switcher");
+            .set("CompanyName", "Panagiotis Ioannidis")
+            .set(
+                "LegalCopyright",
+                "© 2026 Panagiotis Ioannidis. All rights reserved.",
+            );
         resource.compile().expect("compile Windows resources");
     }
 }
