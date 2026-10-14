@@ -2,9 +2,8 @@ use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use radial_core::geometry::{Area, Geometry, Level, Selection, DEAD_ZONE, INNER, OUTER, TAB_ARC};
 use radial_core::model::{Icon, RingItem, RingModel, Target};
-use radial_core::render::{self, Motion, Scene, Style};
+use radial_core::render;
 use radial_core::text::Text;
 use tiny_skia::Pixmap;
 use x11rb::connection::Connection;
@@ -19,37 +18,23 @@ use x11rb::CURRENT_TIME;
 
 use crate::capture::Capturer;
 use crate::hotkey::{self, Keys};
+use crate::ring::{debug, Rect, Ring};
 use crate::settings;
 use crate::snapshots::Snapshots;
 use crate::surface::Surface;
 use crate::tabs::{Tabs, WindowInfo};
 use crate::tray;
-use crate::windows::{self, Apps};
+use crate::windows::{self, Apps, Snapshot};
 use crate::x::{self, Atoms};
 
 const TICK: Duration = Duration::from_millis(8);
 const IDLE: Duration = Duration::from_millis(500);
 const LIVE_INTERVAL: Duration = Duration::from_millis(100);
-const MOVE_THRESHOLD: f32 = 4.0;
-const EDGE_MARGIN: f32 = 8.0;
-const RING_MARGIN: f32 = 44.0;
-const PREVIEW_GAP: f32 = 16.0;
-const TABS_STILLNESS: Duration = Duration::from_millis(150);
-const AIM_STILLNESS: Duration = Duration::from_millis(150);
-const RELOAD_DELAYS: [Duration; 2] = [Duration::from_millis(250), Duration::from_millis(1000)];
 
 enum Message {
     X(Event),
     Tray(tray::Command),
     TabsReady,
-}
-
-#[derive(Clone, Copy)]
-struct Rect {
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
 }
 
 struct App {
@@ -64,26 +49,10 @@ struct App {
     tabs: Tabs,
     apps: Apps,
     text: Text,
-    model: RingModel,
-    geometry: Geometry,
-    style: Style,
-    motion: Motion,
-    targets: Vec<(String, f32)>,
+    ring: Ring,
     backdrop: Option<Pixmap>,
     open: bool,
-    center: (f32, f32),
-    work: Rect,
-    open_cursor: (i32, i32),
     last_cursor: (i32, i32),
-    has_moved: bool,
-    last_move: Instant,
-    dwell: Option<Selection>,
-    close_button: Option<(f32, f32)>,
-    close_hover: bool,
-    last_point: (f32, f32),
-    aim_hold: bool,
-    reloads: Vec<Instant>,
-    last_frame: Instant,
     last_live: Instant,
     live_image: Option<(isize, Icon)>,
     time: u32,
@@ -138,7 +107,10 @@ pub fn run() -> Result<(), String> {
         .ok_or("no usable font found (install fonts-dejavu or fonts-noto)")?;
 
     let (sender, receiver) = channel::<Message>();
-    let _tray = tray::start(tray_sender(sender.clone()), label);
+    let _tray = tray::start(
+        tray_sender(sender.clone()),
+        &format!("Hold {label} to switch windows"),
+    );
     let tabs_sender = sender.clone();
     let tabs = Tabs::start(move || {
         let _ = tabs_sender.send(Message::TabsReady);
@@ -162,35 +134,10 @@ pub fn run() -> Result<(), String> {
         tabs,
         apps: Apps::load(),
         text,
-        model: RingModel::default(),
-        geometry: Geometry::default(),
-        style: Style {
-            scale: 1.0,
-            dark: true,
-            accent: [53, 132, 228],
-        },
-        motion: Motion::default(),
-        targets: Vec::new(),
+        ring: Ring::new([53, 132, 228]),
         backdrop: None,
         open: false,
-        center: (0.0, 0.0),
-        work: Rect {
-            x: 0,
-            y: 0,
-            width: screen.width_in_pixels as i32,
-            height: screen.height_in_pixels as i32,
-        },
-        open_cursor: (0, 0),
         last_cursor: (0, 0),
-        has_moved: false,
-        last_move: Instant::now(),
-        dwell: None,
-        close_button: None,
-        close_hover: false,
-        last_point: (0.0, 0.0),
-        aim_hold: false,
-        reloads: Vec::new(),
-        last_frame: Instant::now(),
         last_live: Instant::now(),
         live_image: None,
         time: CURRENT_TIME,
@@ -217,12 +164,6 @@ pub fn run() -> Result<(), String> {
     Ok(())
 }
 
-fn debug(message: impl FnOnce() -> String) {
-    if std::env::var_os("RADIAL_SWITCHER_DEBUG").is_some() {
-        eprintln!("[debug] {}", message());
-    }
-}
-
 fn tray_sender(sender: Sender<Message>) -> Sender<tray::Command> {
     let (tray_sender, tray_receiver) = channel::<tray::Command>();
     std::thread::spawn(move || {
@@ -233,6 +174,20 @@ fn tray_sender(sender: Sender<Message>) -> Sender<tray::Command> {
         }
     });
     tray_sender
+}
+
+fn window_infos(snapshot: &Snapshot) -> Vec<WindowInfo> {
+    snapshot
+        .front
+        .iter()
+        .chain(&snapshot.others)
+        .flat_map(|app| &app.windows)
+        .map(|w| WindowInfo {
+            handle: w.handle,
+            pid: w.pid,
+            title: w.title.clone(),
+        })
+        .collect()
 }
 
 impl App {
@@ -256,7 +211,7 @@ impl App {
                         self.open_ring();
                     }
                 } else if self.open && self.keys.tab.contains(&key.detail) {
-                    self.model.move_selection(!shift);
+                    self.ring.model.move_selection(!shift);
                     self.redraw();
                 } else if self.open && self.keys.enter.contains(&key.detail) {
                     self.confirm();
@@ -270,13 +225,13 @@ impl App {
                         "key release {} open {} selected {:?}",
                         key.detail,
                         self.open,
-                        self.model.selected_item().map(|i| i.full_title)
+                        self.ring.model.selected_item().map(|i| i.full_title)
                     )
                 });
                 self.time = key.time;
                 if key.detail == self.keys.space
                     && self.open
-                    && self.model.selected_item().is_some()
+                    && self.ring.model.selected_item().is_some()
                 {
                     self.confirm();
                 }
@@ -364,78 +319,24 @@ impl App {
     fn open_ring(&mut self) {
         let snapshot =
             windows::snapshot(self.conn.as_ref(), self.root(), &self.atoms, &mut self.apps);
-        self.model = RingModel::build(snapshot.front.as_ref(), &snapshot.others);
-        self.model.tabs = self.tabs.known();
-        self.tabs.refresh(
-            snapshot
-                .front
-                .iter()
-                .chain(&snapshot.others)
-                .flat_map(|app| &app.windows)
-                .map(|w| WindowInfo {
-                    handle: w.handle,
-                    pid: w.pid,
-                    title: w.title.clone(),
-                })
-                .collect(),
-        );
-        self.dwell = None;
-        self.close_button = None;
-        self.close_hover = false;
-        self.last_point = (0.0, 0.0);
-        self.aim_hold = false;
-        self.reloads.clear();
+        let mut model = RingModel::build(snapshot.front.as_ref(), &snapshot.others);
+        model.tabs = self.tabs.known();
+        self.tabs.refresh(window_infos(&snapshot));
 
         let cursor = self.cursor();
         let work = self.monitor_at(cursor);
         let scale = settings::scale(self.conn.as_ref(), self.root());
-        self.work = work;
-        self.style = Style {
-            scale,
-            dark: settings::dark_mode(),
-            accent: self.style.accent,
-        };
-
-        let reach = (OUTER.1 + RING_MARGIN) * scale;
-        let clamp = |value: f32, low: f32, high: f32| {
-            if low <= high {
-                value.clamp(low, high)
-            } else {
-                (low + high) / 2.0
-            }
-        };
-        let (left, top, right, bottom) = (
-            work.x as f32,
-            work.y as f32,
-            (work.x + work.width) as f32,
-            (work.y + work.height) as f32,
-        );
-        self.center = (
-            clamp(cursor.0 as f32, left + reach, right - reach),
-            clamp(cursor.1 as f32, top + reach, bottom - reach),
-        );
-        self.geometry = Geometry {
-            visible: Some(Area {
-                min_x: (left - self.center.0) / scale + EDGE_MARGIN,
-                max_x: (right - self.center.0) / scale - EDGE_MARGIN,
-                min_y: (self.center.1 - bottom) / scale + EDGE_MARGIN,
-                max_y: (self.center.1 - top) / scale - EDGE_MARGIN,
-            }),
-        };
+        self.ring
+            .begin(model, cursor, work, scale, settings::dark_mode());
 
         let size = render::frame_size(scale);
-        let (x, y) = self.frame_origin(size);
+        let (x, y) = self.ring.frame_origin(size);
         let screen_size = (self.screen.width_in_pixels, self.screen.height_in_pixels);
         self.backdrop = Capturer::region(self.conn.as_ref(), self.root(), screen_size, x, y, size)
             .map(|p| render::blur_backdrop(&p));
 
-        self.open_cursor = cursor;
         self.last_cursor = cursor;
-        self.has_moved = false;
         self.live_image = None;
-        self.motion.reset();
-        self.targets.clear();
-        self.last_frame = Instant::now();
         self.open = true;
         self.redraw();
 
@@ -469,9 +370,9 @@ impl App {
         debug(|| {
             format!(
                 "opened at {:?}: {} inner, {} outer; keyboard grab {keyboard:?}, pointer grab {pointer:?}",
-                self.center,
-                self.model.inner.len(),
-                self.model.outer.len()
+                self.ring.center,
+                self.ring.model.inner.len(),
+                self.ring.model.outer.len()
             )
         });
         let _ = conn.flush();
@@ -487,175 +388,48 @@ impl App {
         let _ = conn.ungrab_keyboard(self.time);
         self.overlay.hide(conn);
         self.card.hide(conn);
-        self.model.selection = None;
-        self.model.inner_tabs_window = None;
-        self.dwell = None;
-        self.reloads.clear();
+        self.ring.end();
         self.backdrop = None;
         let _ = conn.flush();
     }
 
-    fn frame_origin(&self, size: u32) -> (i32, i32) {
-        (
-            (self.center.0 - size as f32 / 2.0).round() as i32,
-            (self.center.1 - size as f32 / 2.0).round() as i32,
-        )
-    }
-
     fn tick(&mut self) {
-        let now = Instant::now();
-        let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.1);
-        self.last_frame = now;
-
         let cursor = self.cursor();
-        let mut changed = false;
-        if cursor != self.last_cursor {
-            self.last_cursor = cursor;
-            self.last_move = now;
-            let moved = ((cursor.0 - self.open_cursor.0) as f32)
-                .hypot((cursor.1 - self.open_cursor.1) as f32);
-            if self.has_moved || moved >= MOVE_THRESHOLD * self.style.scale {
-                self.has_moved = true;
-                changed |= self.update_selection(cursor, false);
-            }
-        }
-        if self.aim_hold && now.duration_since(self.last_move) >= AIM_STILLNESS {
-            changed |= self.update_selection(cursor, true);
-        }
-        changed |= self.check_dwell(now);
-        let hover = self.over_close_button(cursor);
-        if hover != self.close_hover {
-            self.close_hover = hover;
-            changed = true;
-        }
-        if self.reloads.first().is_some_and(|at| now >= *at) {
-            self.reloads.remove(0);
+        self.last_cursor = cursor;
+        let tick = self.ring.tick(cursor);
+        let mut changed = tick.changed;
+        if tick.reload {
             self.reload();
             changed = true;
         }
+        if self.ring.take_selection_changed() {
+            self.live_image = None;
+            self.last_live = Instant::now() - LIVE_INTERVAL;
+        }
+        let now = Instant::now();
         if now.duration_since(self.last_live) >= LIVE_INTERVAL {
             self.last_live = now;
             changed |= self.refresh_live();
         }
-        let animating = self.motion.step(&self.targets, dt);
+        let animating = self.ring.animate();
         if changed || animating {
             self.redraw();
         }
     }
 
-    fn update_selection(&mut self, cursor: (i32, i32), force: bool) -> bool {
-        let scale = self.style.scale;
-        let dx = (cursor.0 as f32 - self.center.0) / scale;
-        let dy = (self.center.1 - cursor.1 as f32) / scale;
-        let mut escape = false;
-        let selection = match self.model.inner_tabs_window {
-            Some(window) => {
-                let tab_count = self.model.inner_tab_items(window).len();
-                let tab_selection = self.geometry.tab_popup_selection(
-                    dx,
-                    dy,
-                    self.model.inner.len(),
-                    window,
-                    tab_count,
-                );
-                let distance = dx.hypot(dy);
-                let ring_boundary = (INNER.1 + OUTER.0) / 2.0;
-                if tab_selection.is_none() && distance > ring_boundary && distance <= OUTER.1 {
-                    escape = true;
-                    self.normal_selection(dx, dy, None)
-                } else {
-                    tab_selection
-                }
-            }
-            None => self.normal_selection(dx, dy, self.model.selection),
-        };
-        let point = (dx, dy);
-        let previous = std::mem::replace(&mut self.last_point, point);
-        if selection == self.model.selection {
-            self.aim_hold = false;
-            return false;
-        }
-        if !force
-            && self
-                .model
-                .aim(&self.geometry)
-                .is_some_and(|aim| aim.heading(previous, point))
-        {
-            self.aim_hold = true;
-            return false;
-        }
-        self.aim_hold = false;
-        if escape {
-            self.model.inner_tabs_window = None;
-        }
-        debug(|| format!("selection {selection:?}"));
-        self.model.selection = selection;
-        self.update_tab_mode(dx.hypot(dy) <= DEAD_ZONE);
-        self.live_image = None;
-        self.last_live = Instant::now() - LIVE_INTERVAL;
-        true
-    }
-
-    fn normal_selection(&self, dx: f32, dy: f32, current: Option<Selection>) -> Option<Selection> {
-        let model = &self.model;
-        self.geometry.selection(
-            dx,
-            dy,
-            model.inner.len(),
-            &model.outer_window_counts(),
-            &|app, window| model.tab_items(app, window).len(),
-            current,
-        )
-    }
-
-    fn update_tab_mode(&mut self, in_dead_zone: bool) {
-        let selection = self.model.selection;
-        if let Some(window) = self.model.inner_tabs_window {
-            let on_tabs = selection.is_some_and(|s| s.level == Level::Outer);
-            let on_window = selection.is_some_and(|s| s.level == Level::Inner && s.index == window);
-            if on_tabs || on_window || (selection.is_none() && !in_dead_zone) {
-                return;
-            }
-            self.model.inner_tabs_window = None;
-        }
-        self.dwell = selection
-            .filter(|s| s.level == Level::Inner && self.model.inner_window_has_tabs(s.index));
-    }
-
-    fn check_dwell(&mut self, now: Instant) -> bool {
-        let Some(selection) = self.dwell else {
-            return false;
-        };
-        if self.model.selection != Some(selection) {
-            self.dwell = None;
-            return false;
-        }
-        if now.duration_since(self.last_move) < TABS_STILLNESS {
-            return false;
-        }
-        self.dwell = None;
-        self.model.inner_tabs_window = Some(selection.index);
-        debug(|| format!("tab pop-up for inner window {}", selection.index));
-        true
-    }
-
     fn tabs_ready(&mut self) {
-        self.model.tabs = self.tabs.known();
-        debug(|| format!("tabs for {} windows", self.model.tabs.len()));
+        let tabs = self.tabs.known();
+        debug(|| format!("tabs for {} windows", tabs.len()));
         if !self.open {
+            self.ring.model.tabs = tabs;
             return;
         }
-        if self.model.target_item().is_none() {
-            self.model.selection = None;
-        }
-        if self.dwell.is_none() && self.model.inner_tabs_window.is_none() {
-            self.update_tab_mode(false);
-        }
+        self.ring.tabs_updated(tabs);
         self.redraw();
     }
 
     fn refresh_live(&mut self) -> bool {
-        let Some(item) = self.model.selected_item() else {
+        let Some(item) = self.ring.model.selected_item() else {
             return false;
         };
         if item.tab().is_some_and(|tab| !tab.selected) {
@@ -665,7 +439,7 @@ impl App {
         let Some(capturer) = &self.capturer else {
             return false;
         };
-        let width = (render::CARD_IMAGE.0 * self.style.scale) as u16;
+        let width = (render::CARD_IMAGE.0 * self.ring.style.scale) as u16;
         let Some(image) = capturer.window(self.conn.as_ref(), self.root(), handle as Window, width)
         else {
             return false;
@@ -677,43 +451,18 @@ impl App {
         true
     }
 
-    fn thumbnail(&self, item: &RingItem) -> Option<Icon> {
-        let handle = item.preview_window().handle;
-        match &item.target {
-            Target::Tab { tab, .. } => self.snapshots.tab(handle, &tab.title).or_else(|| {
-                if tab.selected {
-                    self.snapshots.window(handle)
-                } else {
-                    None
-                }
-            }),
-            _ => self.snapshots.window(handle),
-        }
-    }
-
     fn redraw(&mut self) {
-        let thumbnail = |item: &RingItem| self.thumbnail(item);
-        let frame = render::render(&Scene {
-            model: &self.model,
-            geometry: &self.geometry,
-            text: &self.text,
-            style: self.style,
-            thumbnail: &thumbnail,
-            backdrop: self.backdrop.as_ref(),
-            motion: &self.motion,
-            close_hover: self.close_hover,
-        });
-        let (x, y) = self.frame_origin(frame.pixmap.width());
-        self.close_button = frame
-            .close_button
-            .map(|(bx, by)| (bx + x as f32, by + y as f32));
+        let snapshots = &self.snapshots;
+        let thumbnail = |item: &RingItem| thumbnail_from(snapshots, item);
+        let (frame, (x, y)) = self
+            .ring
+            .render(&self.text, &thumbnail, self.backdrop.as_ref());
         self.overlay.show(self.conn.as_ref(), &frame.pixmap, x, y);
-        self.targets = frame.targets;
         self.draw_card();
     }
 
     fn draw_card(&mut self) {
-        let Some(item) = self.model.selected_item() else {
+        let Some(item) = self.ring.model.selected_item() else {
             self.card.hide(self.conn.as_ref());
             return;
         };
@@ -721,59 +470,31 @@ impl App {
         let background_tab = item.tab().is_some_and(|tab| !tab.selected);
         let image = match &self.live_image {
             Some((h, image)) if *h == handle && !background_tab => Some(image.clone()),
-            _ => self.thumbnail(&item),
+            _ => thumbnail_from(&self.snapshots, &item),
         };
         let card = render::render_card(
             &self.text,
-            self.style,
+            self.ring.style,
             &item.full_title,
             image.as_deref(),
             item.icon.as_deref(),
         );
-        let (x, y) = self.card_origin(card.width() as f32, card.height() as f32);
+        let (x, y) = self
+            .ring
+            .card_origin(card.width() as f32, card.height() as f32);
         self.card.show(self.conn.as_ref(), &card, x, y);
     }
 
-    fn card_origin(&self, w: f32, h: f32) -> (i32, i32) {
-        let scale = self.style.scale;
-        let distance = (TAB_ARC.1 + PREVIEW_GAP) * scale + w / 2.0;
-        let margin = EDGE_MARGIN * scale;
-        let (left, right) = (self.work.x as f32, (self.work.x + self.work.width) as f32);
-        let (top, bottom) = (self.work.y as f32, (self.work.y + self.work.height) as f32);
-        let x = if self.center.0 + distance + w / 2.0 <= right - margin {
-            self.center.0 + distance
-        } else if self.center.0 - distance - w / 2.0 >= left + margin {
-            self.center.0 - distance
-        } else if right - self.center.0 >= self.center.0 - left {
-            right - margin - w / 2.0
-        } else {
-            left + margin + w / 2.0
-        };
-        let y = self.center.1.clamp(
-            top + margin + h / 2.0,
-            (bottom - margin - h / 2.0).max(top + margin + h / 2.0),
-        );
-        ((x - w / 2.0) as i32, (y - h / 2.0) as i32)
-    }
-
     fn clicked(&mut self) {
-        if self.has_moved {
-            let cursor = self.cursor();
-            self.update_selection(cursor, true);
-        }
         let cursor = self.cursor();
-        match self.model.selected_item() {
-            Some(item) if self.over_close_button(cursor) => self.close_target(&item),
+        if self.ring.has_moved() {
+            self.ring.update_selection(cursor, true);
+        }
+        match self.ring.model.selected_item() {
+            Some(item) if self.ring.over_close_button(cursor) => self.close_target(&item),
             Some(_) => self.confirm(),
             None => self.close(),
         }
-    }
-
-    fn over_close_button(&self, cursor: (i32, i32)) -> bool {
-        self.close_button.is_some_and(|(x, y)| {
-            (cursor.0 as f32 - x).hypot(cursor.1 as f32 - y)
-                <= render::CLOSE_HIT_RADIUS * self.style.scale
-        })
     }
 
     fn close_window(&self, window: Window) {
@@ -810,7 +531,7 @@ impl App {
             }
             Target::Tab { window, index, .. } => {
                 self.tabs.close(window.handle, *index);
-                if let Some(tabs) = self.model.tabs.get_mut(&window.handle) {
+                if let Some(tabs) = self.ring.model.tabs.get_mut(&window.handle) {
                     if *index < tabs.len() {
                         tabs.remove(*index);
                     }
@@ -818,62 +539,23 @@ impl App {
             }
         }
         let _ = self.conn.flush();
-        if item.tab().is_none() {
-            self.model.inner_tabs_window = None;
-        }
-        self.model.selection = None;
-        self.dwell = None;
-        self.close_hover = false;
         self.live_image = None;
-        self.open_cursor = self.cursor();
-        self.has_moved = false;
-        let now = Instant::now();
-        self.reloads = RELOAD_DELAYS.iter().map(|delay| now + *delay).collect();
+        let cursor = self.cursor();
+        self.ring.closed_target(item, cursor);
         self.redraw();
     }
 
     fn reload(&mut self) {
         let snapshot =
             windows::snapshot(self.conn.as_ref(), self.root(), &self.atoms, &mut self.apps);
-        let tabs_window = self
-            .model
-            .inner_tabs_window
-            .and_then(|w| self.model.inner.get(w))
-            .map(|item| item.preview_window().handle);
-        self.model = RingModel::build(snapshot.front.as_ref(), &snapshot.others);
-        self.model.tabs = self.tabs.known();
-        self.model.inner_tabs_window = tabs_window
-            .and_then(|handle| {
-                self.model
-                    .inner
-                    .iter()
-                    .position(|item| item.preview_window().handle == handle)
-            })
-            .filter(|w| self.model.inner_window_has_tabs(*w));
-        self.tabs.refresh(
-            snapshot
-                .front
-                .iter()
-                .chain(&snapshot.others)
-                .flat_map(|app| &app.windows)
-                .map(|w| WindowInfo {
-                    handle: w.handle,
-                    pid: w.pid,
-                    title: w.title.clone(),
-                })
-                .collect(),
-        );
-        debug(|| {
-            format!(
-                "reloaded: {} inner, {} outer",
-                self.model.inner.len(),
-                self.model.outer.len()
-            )
-        });
+        self.ring
+            .rebuild(RingModel::build(snapshot.front.as_ref(), &snapshot.others));
+        self.ring.model.tabs = self.tabs.known();
+        self.tabs.refresh(window_infos(&snapshot));
     }
 
     fn confirm(&mut self) {
-        let Some(item) = self.model.selected_item() else {
+        let Some(item) = self.ring.model.selected_item() else {
             self.close();
             return;
         };
@@ -904,5 +586,19 @@ impl App {
             )
         });
         let _ = conn.flush();
+    }
+}
+
+fn thumbnail_from(snapshots: &Snapshots, item: &RingItem) -> Option<Icon> {
+    let handle = item.preview_window().handle;
+    match &item.target {
+        Target::Tab { tab, .. } => snapshots.tab(handle, &tab.title).or_else(|| {
+            if tab.selected {
+                snapshots.window(handle)
+            } else {
+                None
+            }
+        }),
+        _ => snapshots.window(handle),
     }
 }

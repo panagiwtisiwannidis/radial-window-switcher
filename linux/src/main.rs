@@ -1,6 +1,7 @@
 mod app;
 mod capture;
 mod hotkey;
+mod ring;
 mod settings;
 mod snapshots;
 mod surface;

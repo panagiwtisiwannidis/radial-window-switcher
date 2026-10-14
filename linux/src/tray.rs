@@ -12,7 +12,7 @@ pub enum Command {
 
 struct RadialTray {
     commands: Sender<Command>,
-    hotkey: String,
+    hint: String,
     icons: Vec<Icon>,
 }
 
@@ -32,7 +32,7 @@ impl Tray for RadialTray {
     fn tool_tip(&self) -> ToolTip {
         ToolTip {
             title: "Radial Switcher".into(),
-            description: format!("Hold {} to switch windows", self.hotkey),
+            description: self.hint.clone(),
             ..ToolTip::default()
         }
     }
@@ -40,7 +40,7 @@ impl Tray for RadialTray {
     fn menu(&self) -> Vec<MenuItem<Self>> {
         vec![
             StandardItem {
-                label: format!("Hold {} to switch windows", self.hotkey),
+                label: self.hint.clone(),
                 enabled: false,
                 ..StandardItem::default()
             }
@@ -87,10 +87,10 @@ fn icon(size: u32) -> Icon {
     }
 }
 
-pub fn start(commands: Sender<Command>, hotkey: &str) -> Option<Handle<impl Tray>> {
+pub fn start(commands: Sender<Command>, hint: &str) -> Option<Handle<impl Tray>> {
     let tray = RadialTray {
         commands,
-        hotkey: hotkey.to_string(),
+        hint: hint.to_string(),
         icons: vec![icon(22), icon(32), icon(48), icon(64)],
     };
     tray.spawn().ok()
