@@ -654,7 +654,7 @@ impl State {
             self.pressed.insert(code);
             true
         } else {
-            self.pressed.remove(code) || self.held.remove(&code)
+            self.pressed.remove(&code) || self.held.remove(&code)
         };
         debug(|| {
             format!("wayland: key {code} {key:?} pressed {pressed} (press seen {press_seen})")
