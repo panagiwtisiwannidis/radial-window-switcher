@@ -78,17 +78,6 @@ struct RingView: View {
     }
 
     private func ring(_ items: [RingItem], level: RingLevel, radii: ClosedRange<CGFloat>, interactive: Bool = true) -> some View {
-        layered { layer in ringSegments(items, level: level, radii: radii, interactive: interactive, layer: layer) }
-    }
-
-    private func layered<Content: View>(@ViewBuilder _ content: @escaping (SegmentLayer) -> Content) -> some View {
-        ZStack {
-            ForEach(SegmentLayer.allCases, id: \.self) { layer in content(layer) }
-        }
-    }
-
-    private func ringSegments(_ items: [RingItem], level: RingLevel, radii: ClosedRange<CGFloat>, interactive: Bool,
-                              layer: SegmentLayer) -> some View {
         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
             let isSelected = interactive && model.selection == RingSelection(level: level, index: index)
             let isParentOfSelection = interactive && model.selection?.level == level && model.selection?.index == index
@@ -98,7 +87,7 @@ struct RingView: View {
             let bounds = RingGeometry.segmentBounds(index: index, count: items.count)
             Segment(bounds: bounds, radii: radii, gap: items.count > 1 ? 3 : 0,
                     state: isSelected ? .selected : isParentOfSelection ? .parent : .normal,
-                    isCloseHovered: model.isCloseHovered, layer: layer) {
+                    isCloseHovered: model.isCloseHovered) {
                 if case .tab = item.target {
                     TabArcLabel(item: item, thumbnail: thumbnail(for: item), isSelected: isSelected,
                                 width: (bounds.end - bounds.start) * (radii.lowerBound + radii.upperBound) / 2 - 8)
@@ -111,10 +100,6 @@ struct RingView: View {
     }
 
     private func windowArc(appIndex: Int) -> some View {
-        layered { layer in windowArcSegments(appIndex: appIndex, layer: layer) }
-    }
-
-    private func windowArcSegments(appIndex: Int, layer: SegmentLayer) -> some View {
         let app = model.outer[appIndex]
         let bounds = RingGeometry.windowArcBounds(appIndex: appIndex, appCount: model.outer.count, windowCount: app.windows.count)
         return ForEach(Array(app.windows.enumerated()), id: \.element.id) { index, window in
@@ -125,7 +110,7 @@ struct RingView: View {
             let radii = RingGeometry.windowArcRadii
             Segment(bounds: bounds[index], radii: radii, gap: 3,
                     state: isSelected ? .selected : isParentOfSelection ? .parent : .normal, emphasis: .tab,
-                    isCloseHovered: model.isCloseHovered, layer: layer) {
+                    isCloseHovered: model.isCloseHovered) {
                 TabArcLabel(item: window, thumbnail: thumbnail(for: window), isSelected: isSelected,
                             width: (bounds[index].end - bounds[index].start) * (radii.lowerBound + radii.upperBound) / 2 - 8,
                             thumbnailHeight: 66)
@@ -134,10 +119,6 @@ struct RingView: View {
     }
 
     private func tabArc(appIndex: Int, windowIndex: Int?, tabs: [RingItem]) -> some View {
-        layered { layer in tabArcSegments(appIndex: appIndex, windowIndex: windowIndex, tabs: tabs, layer: layer) }
-    }
-
-    private func tabArcSegments(appIndex: Int, windowIndex: Int?, tabs: [RingItem], layer: SegmentLayer) -> some View {
         let windowCount = model.outer[appIndex].windows.count
         let windowBounds = windowCount >= 2
             ? RingGeometry.windowArcBounds(appIndex: appIndex, appCount: model.outer.count, windowCount: windowCount)
@@ -150,7 +131,7 @@ struct RingView: View {
                 let bounds = arc.bounds[index]
                 let midRadius = (arc.radii.lowerBound + arc.radii.upperBound) / 2
                 Segment(bounds: bounds, radii: arc.radii, gap: 2, state: isSelected ? .selected : .normal, emphasis: .tab,
-                        isCloseHovered: model.isCloseHovered, layer: layer) {
+                        isCloseHovered: model.isCloseHovered) {
                     TabArcLabel(item: tab, thumbnail: thumbnail(for: tab), isSelected: isSelected,
                                 width: (bounds.end - bounds.start) * midRadius - 8, thumbnailHeight: 66)
                 }
@@ -159,17 +140,13 @@ struct RingView: View {
     }
 
     private func tabPopup(innerIndex: Int, tabs: [RingItem]) -> some View {
-        layered { layer in tabPopupSegments(innerIndex: innerIndex, tabs: tabs, layer: layer) }
-    }
-
-    private func tabPopupSegments(innerIndex: Int, tabs: [RingItem], layer: SegmentLayer) -> some View {
         let radii = RingGeometry.tabPopupRadii
         let midRadius = (radii.lowerBound + radii.upperBound) / 2
         let bounds = RingGeometry.tabPopupBounds(innerIndex: innerIndex, innerCount: model.inner.count, tabCount: tabs.count)
         return ForEach(Array(tabs.enumerated()), id: \.element.id) { index, tab in
             let isSelected = model.selection == RingSelection(level: .outer, index: index)
             Segment(bounds: bounds[index], radii: radii, gap: 3, state: isSelected ? .selected : .normal, emphasis: .tab,
-                    isCloseHovered: model.isCloseHovered, layer: layer) {
+                    isCloseHovered: model.isCloseHovered) {
                 TabArcLabel(item: tab, thumbnail: thumbnail(for: tab), isSelected: isSelected,
                             width: (bounds[index].end - bounds[index].start) * midRadius - 8, thumbnailHeight: 66)
             }
@@ -209,8 +186,6 @@ struct RingView: View {
 
 enum SegmentState { case normal, parent, selected }
 
-enum SegmentLayer: CaseIterable { case glass, content }
-
 private struct Segment<Label: View>: View {
     enum Emphasis {
         case normal, tab
@@ -226,7 +201,6 @@ private struct Segment<Label: View>: View {
     let state: SegmentState
     var emphasis: Emphasis = .normal
     var isCloseHovered = false
-    var layer: SegmentLayer = .content
     @ViewBuilder let label: () -> Label
 
     var body: some View {
@@ -239,14 +213,11 @@ private struct Segment<Label: View>: View {
         let diameter = RingGeometry.maxRadius * 2
         let segmentCenter = UnitPoint(x: 0.5 + labelOffset.width / diameter, y: 0.5 + labelOffset.height / diameter)
         ZStack {
-            if layer == .glass {
-                GlassBackground(shape: sector, state: state)
-            } else {
-                label()
-                    .scaleEffect(isSelected ? emphasis.labelScale : 1)
-                    .offset(labelOffset)
-            }
-            if isSelected, layer == .content {
+            GlassBackground(shape: sector, state: state)
+            label()
+                .scaleEffect(isSelected ? emphasis.labelScale : 1)
+                .offset(labelOffset)
+            if isSelected {
                 CloseBadge(isHovered: isCloseHovered)
                     .offset(RingGeometry.offset(angle: midAngle, radius: RingGeometry.closeButtonRadius(
                         radii: radii, pop: emphasis.popDistance, scale: emphasis.segmentScale)))
@@ -255,7 +226,7 @@ private struct Segment<Label: View>: View {
         }
         .scaleEffect(isSelected ? emphasis.segmentScale : 1, anchor: segmentCenter)
         .offset(isSelected ? RingGeometry.offset(angle: midAngle, radius: emphasis.popDistance) : .zero)
-        .zIndex((isSelected ? 2 : 0) + (layer == .content ? 1 : 0))
+        .zIndex(isSelected ? 1 : 0)
         .animation(RingAnimation.hover, value: state)
     }
 }
