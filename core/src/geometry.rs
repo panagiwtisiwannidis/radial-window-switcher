@@ -19,6 +19,8 @@ const TAB_ARC_SEGMENT: f32 = 0.26;
 const SINGLE_WINDOW_TAB_ARC_SEGMENT: f32 = 0.36;
 const TAB_POPUP_SEGMENT: f32 = 0.36;
 const WIDE_FAN_MAX_SPAN: f32 = 1.6 * PI;
+const AIM_MARGIN: f32 = 0.2;
+const AIM_SAMPLES: usize = 24;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bounds {
@@ -30,6 +32,42 @@ impl Bounds {
     pub fn mid(&self) -> f32 {
         (self.start + self.end) / 2.0
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Aim {
+    pub arc: Bounds,
+    pub arc_inner: f32,
+}
+
+impl Aim {
+    pub fn heading(&self, from: (f32, f32), to: (f32, f32)) -> bool {
+        let (mx, my) = (to.0 - from.0, to.1 - from.1);
+        if to.0.hypot(to.1) >= self.arc_inner || mx.hypot(my) <= 0.0 {
+            return false;
+        }
+        let direction = my.atan2(mx);
+        let wrap = |a: f32| (a + PI).rem_euclid(2.0 * PI) - PI;
+        let relative: Vec<f32> = (0..=AIM_SAMPLES)
+            .map(|k| {
+                let angle = self.arc.start
+                    + (self.arc.end - self.arc.start) * k as f32 / AIM_SAMPLES as f32;
+                let (px, py) = (self.arc_inner * angle.sin(), self.arc_inner * angle.cos());
+                wrap((py - to.1).atan2(px - to.0) - direction)
+            })
+            .collect();
+        relative.iter().any(|r| r.abs() <= AIM_MARGIN)
+            || relative
+                .windows(2)
+                .any(|w| w[0].signum() != w[1].signum() && (w[0] - w[1]).abs() < PI)
+    }
+}
+
+pub fn span(bounds: &[Bounds]) -> Option<Bounds> {
+    Some(Bounds {
+        start: bounds.first()?.start,
+        end: bounds.last()?.end,
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -360,6 +398,23 @@ pub fn offset(angle: f32, radius: f32) -> (f32, f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moving_toward_a_rotated_arc_counts_and_moving_away_does_not() {
+        let aim = Aim {
+            arc: Bounds {
+                start: 0.6,
+                end: 2.0,
+            },
+            arc_inner: TAB_POPUP.0,
+        };
+        let start = (0.0, 90.0);
+        assert!(aim.heading(start, (8.0, 88.0)));
+        assert!(aim.heading(start, (6.0, 84.0)));
+        assert!(!aim.heading(start, (-8.0, 88.0)));
+        assert!(!aim.heading(start, (0.0, 98.0)));
+        assert!(!aim.heading((0.0, 200.0), (10.0, 220.0)));
+    }
 
     fn no_tabs(_: usize, _: Option<usize>) -> usize {
         0

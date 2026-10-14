@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use tiny_skia::Pixmap;
 
-use crate::geometry::{Level, Selection, MAX_INNER_ITEMS};
+use crate::geometry::{
+    self, Aim, Geometry, Level, Selection, MAX_INNER_ITEMS, TAB_POPUP, WINDOW_ARC,
+};
 
 pub type Icon = Arc<Pixmap>;
 
@@ -257,6 +259,52 @@ impl RingModel {
         let selection = self.selection.filter(|s| s.level == Level::Outer)?;
         let items = self.tab_items(selection.index, selection.window);
         (items.len() >= 2).then_some((selection.index, selection.window, items))
+    }
+
+    pub fn aim(&self, geometry: &Geometry) -> Option<Aim> {
+        let selection = self.selection?;
+        if let Some(window) = self.inner_tabs_window {
+            if selection.level != Level::Inner || selection.index != window {
+                return None;
+            }
+            let bounds = geometry.tab_popup_bounds(
+                window,
+                self.inner.len(),
+                self.inner_tab_items(window).len(),
+            );
+            return Some(Aim {
+                arc: geometry::span(&bounds)?,
+                arc_inner: TAB_POPUP.0,
+            });
+        }
+        if selection.level != Level::Outer || selection.tab.is_some() {
+            return None;
+        }
+        let app = selection.index;
+        let app_count = self.outer.len();
+        let window_count = self.outer.get(app)?.windows.len();
+        let window_bounds = if window_count >= 2 {
+            geometry.window_arc_bounds(app, app_count, window_count)
+        } else {
+            Vec::new()
+        };
+        if selection.window.is_none() && window_count >= 2 {
+            return Some(Aim {
+                arc: geometry::span(&window_bounds)?,
+                arc_inner: WINDOW_ARC.0,
+            });
+        }
+        let arc = geometry.tab_arc(
+            app,
+            app_count,
+            selection.window,
+            &window_bounds,
+            self.tab_items(app, selection.window).len(),
+        )?;
+        Some(Aim {
+            arc: geometry::span(&arc.bounds)?,
+            arc_inner: arc.radii.0,
+        })
     }
 
     pub fn is_past_apps_ring(&self) -> bool {

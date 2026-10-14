@@ -144,6 +144,30 @@ final class RingModel: ObservableObject {
         return (RingGeometry.segmentBounds(index: selection.index, count: outer.count), RingGeometry.outerRadii, false)
     }
 
+    var aim: RingGeometry.Aim? {
+        guard let selection else { return nil }
+        if let tabsWindow = innerTabsWindowIndex {
+            guard selection.level == .inner, selection.index == tabsWindow else { return nil }
+            let bounds = RingGeometry.tabPopupBounds(innerIndex: tabsWindow, innerCount: inner.count, tabCount: outerItems.count)
+            guard let first = bounds.first, let last = bounds.last else { return nil }
+            return .init(arc: (first.start, last.end), arcInner: RingGeometry.tabPopupRadii.lowerBound)
+        }
+        guard selection.level == .outer, selection.tabIndex == nil, outer.indices.contains(selection.index) else { return nil }
+        let app = selection.index
+        let windowCount = outer[app].windows.count
+        let windowBounds = windowCount >= 2
+            ? RingGeometry.windowArcBounds(appIndex: app, appCount: outer.count, windowCount: windowCount)
+            : []
+        if selection.windowIndex == nil, windowCount >= 2, let first = windowBounds.first, let last = windowBounds.last {
+            return .init(arc: (first.start, last.end), arcInner: RingGeometry.windowArcRadii.lowerBound)
+        }
+        guard let arc = RingGeometry.tabArc(
+            appIndex: app, appCount: outer.count, windowIndex: selection.windowIndex,
+            windowBounds: windowBounds, tabCount: tabItems(appIndex: app, windowIndex: selection.windowIndex).count
+        ), let first = arc.bounds.first, let last = arc.bounds.last else { return nil }
+        return .init(arc: (first.start, last.end), arcInner: arc.radii.lowerBound)
+    }
+
     var openTabArc: (appIndex: Int, windowIndex: Int?, items: [RingItem])? {
         guard innerTabsWindowIndex == nil, let selection, selection.level == .outer else { return nil }
         let items = tabItems(appIndex: selection.index, windowIndex: selection.windowIndex)
@@ -341,17 +365,49 @@ enum RingGeometry {
         return min(max(Int((relative - segment / 2) / segment), 0), bounds.count - 1)
     }
 
-    static let closeButtonInset: CGFloat = 12
+    static let closeButtonEdge: CGFloat = 6
     static let closeButtonHitRadius: CGFloat = 13
+
+    static func closeButtonRadius(radii: ClosedRange<CGFloat>, pop: CGFloat, scale: CGFloat) -> CGFloat {
+        let mid = (radii.lowerBound + radii.upperBound) / 2
+        return mid + (radii.upperBound - closeButtonEdge - pop - mid) / scale
+    }
 
     static func closeButtonOffset(bounds: Bounds, radii: ClosedRange<CGFloat>, isFan: Bool) -> CGSize {
         let mid = (bounds.start + bounds.end) / 2
-        let button = offset(angle: mid, radius: radii.upperBound - closeButtonInset)
-        let center = offset(angle: mid, radius: (radii.lowerBound + radii.upperBound) / 2)
         let scale: CGFloat = isFan ? 1.2 : 1
-        let pop = offset(angle: mid, radius: isFan ? 10 : 7)
+        let popDistance: CGFloat = isFan ? 10 : 7
+        let button = offset(angle: mid, radius: closeButtonRadius(radii: radii, pop: popDistance, scale: scale))
+        let center = offset(angle: mid, radius: (radii.lowerBound + radii.upperBound) / 2)
+        let pop = offset(angle: mid, radius: popDistance)
         return CGSize(width: center.width + scale * (button.width - center.width) + pop.width,
                       height: center.height + scale * (button.height - center.height) + pop.height)
+    }
+
+    struct Aim {
+        let arc: Bounds
+        let arcInner: CGFloat
+    }
+
+    private static let aimMargin: CGFloat = 0.2
+    private static let aimSamples = 24
+
+    static func isHeading(toward aim: Aim, from: CGPoint, to: CGPoint) -> Bool {
+        let move = CGPoint(x: to.x - from.x, y: to.y - from.y)
+        guard hypot(to.x, to.y) < aim.arcInner, hypot(move.x, move.y) > 0 else { return false }
+        let direction = atan2(move.y, move.x)
+        func wrap(_ a: CGFloat) -> CGFloat {
+            var r = (a + .pi).truncatingRemainder(dividingBy: 2 * .pi)
+            if r < 0 { r += 2 * .pi }
+            return r - .pi
+        }
+        let relative = (0...aimSamples).map { k -> CGFloat in
+            let angle = aim.arc.start + (aim.arc.end - aim.arc.start) * CGFloat(k) / CGFloat(aimSamples)
+            let point = CGPoint(x: aim.arcInner * sin(angle), y: aim.arcInner * cos(angle))
+            return wrap(atan2(point.y - to.y, point.x - to.x) - direction)
+        }
+        if relative.contains(where: { abs($0) <= aimMargin }) { return true }
+        return zip(relative, relative.dropFirst()).contains { a, b in (a < 0) != (b < 0) && abs(a - b) < .pi }
     }
 
     static func offset(angle: CGFloat, radius: CGFloat) -> CGSize {

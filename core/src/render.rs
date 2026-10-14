@@ -17,8 +17,9 @@ pub const FRAME_RADIUS: f32 = TAB_ARC.1 + 44.0;
 const BACKDROP_ALPHA: f32 = 0.35;
 const SETTLE_TIME: f32 = 0.07;
 const OPEN_START_SCALE: f32 = 0.82;
-const CLOSE_INSET: f32 = 12.0;
+const CLOSE_EDGE: f32 = 6.0;
 const CLOSE_RADIUS: f32 = 9.0;
+const CLOSE_HOVER_ZOOM: f32 = 1.3;
 pub const CLOSE_HIT_RADIUS: f32 = 13.0;
 
 #[derive(Clone, Copy)]
@@ -468,8 +469,10 @@ impl Painter<'_, '_> {
         }
         self.segment_label(s, at, size_scale, alpha, selected_text);
         if s.selected {
-            let (bx, by) =
-                self.to_pixels(geometry::offset(s.bounds.mid(), s.radii.1 - CLOSE_INSET));
+            let mid = (s.radii.0 + s.radii.1) / 2.0;
+            let radius = mid
+                + (s.radii.1 - CLOSE_EDGE - s.emphasis.pop() - mid) / s.emphasis.segment_scale();
+            let (bx, by) = self.to_pixels(geometry::offset(s.bounds.mid(), radius));
             let mut button = Point::from_xy(bx, by);
             transform.map_points(std::slice::from_mut(&mut button));
             self.close_badge((button.x, button.y), h);
@@ -480,7 +483,8 @@ impl Painter<'_, '_> {
     fn close_badge(&mut self, at: (f32, f32), h: f32) {
         let scale = self.scene.style.scale;
         let hovered = self.scene.close_hover;
-        let radius = CLOSE_RADIUS * scale * if hovered { 1.15 } else { 1.0 };
+        let zoom = if hovered { CLOSE_HOVER_ZOOM } else { 1.0 };
+        let radius = CLOSE_RADIUS * scale * zoom;
         let mut pb = PathBuilder::new();
         pb.push_circle(at.0, at.1, radius);
         let Some(circle) = pb.finish() else { return };
@@ -488,12 +492,7 @@ impl Painter<'_, '_> {
             anti_alias: true,
             ..Paint::default()
         };
-        let fill = if hovered {
-            Color::from_rgba8(255, 95, 87, (255.0 * h) as u8)
-        } else {
-            Color::from_rgba8(0, 0, 0, (140.0 * h) as u8)
-        };
-        paint.set_color(fill);
+        paint.set_color(Color::from_rgba8(0, 0, 0, (140.0 * h) as u8));
         self.pixmap.fill_path(
             &circle,
             &paint,
@@ -508,7 +507,7 @@ impl Painter<'_, '_> {
         };
         self.pixmap
             .stroke_path(&circle, &paint, &rim, Transform::identity(), None);
-        let arm = 3.2 * scale;
+        let arm = 3.2 * scale * zoom;
         let mut pb = PathBuilder::new();
         pb.move_to(at.0 - arm, at.1 - arm);
         pb.line_to(at.0 + arm, at.1 + arm);

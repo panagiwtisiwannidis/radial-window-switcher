@@ -220,7 +220,8 @@ private struct Segment<Label: View>: View {
                 .offset(labelOffset)
             if isSelected {
                 CloseBadge(isHovered: isCloseHovered)
-                    .offset(RingGeometry.offset(angle: midAngle, radius: radii.upperBound - RingGeometry.closeButtonInset))
+                    .offset(RingGeometry.offset(angle: midAngle, radius: RingGeometry.closeButtonRadius(
+                        radii: radii, pop: emphasis.popDistance, scale: emphasis.segmentScale)))
                     .transition(.scale(scale: 0.5).combined(with: .opacity))
             }
         }
@@ -237,7 +238,7 @@ private struct CloseBadge: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(isHovered ? Color(red: 1, green: 0.37, blue: 0.34) : Color.black.opacity(0.55))
+                .fill(Color.black.opacity(0.55))
             Circle()
                 .stroke(Color.white.opacity(0.7), lineWidth: 1)
             Image(systemName: "xmark")
@@ -245,7 +246,7 @@ private struct CloseBadge: View {
                 .foregroundStyle(.white)
         }
         .frame(width: 18, height: 18)
-        .scaleEffect(isHovered ? 1.15 : 1)
+        .scaleEffect(isHovered ? 1.3 : 1)
         .animation(RingAnimation.hover, value: isHovered)
     }
 }

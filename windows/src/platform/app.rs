@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::ffi::c_void;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use tiny_skia::Pixmap;
 use windows::core::{w, Result};
@@ -44,6 +44,7 @@ const EDGE_MARGIN: f32 = 8.0;
 const RING_MARGIN: f32 = 44.0;
 const PREVIEW_GAP: f32 = 16.0;
 const TABS_STILLNESS: f32 = 0.15;
+const AIM_STILLNESS: Duration = Duration::from_millis(150);
 const RELOAD_DELAYS_MS: [u64; 2] = [250, 1000];
 
 struct App {
@@ -71,6 +72,8 @@ struct App {
     dwell: Option<(Selection, Instant)>,
     close_button: Option<(f32, f32)>,
     close_hover: bool,
+    last_point: (f32, f32),
+    aim_hold: bool,
     reloads: Vec<Instant>,
 }
 
@@ -159,6 +162,8 @@ fn start() -> Result<()> {
             dwell: None,
             close_button: None,
             close_hover: false,
+            last_point: (0.0, 0.0),
+            aim_hold: false,
             reloads: Vec::new(),
         };
         app.prewarm_tabs();
@@ -251,6 +256,8 @@ impl App {
         self.dwell = None;
         self.close_button = None;
         self.close_hover = false;
+        self.last_point = (0.0, 0.0);
+        self.aim_hold = false;
         self.reloads.clear();
         self.motion.reset();
         self.targets.clear();
@@ -304,8 +311,11 @@ impl App {
                 .hypot((cursor.y - self.open_cursor.y) as f32);
             if self.has_moved || moved >= MOVE_THRESHOLD * self.style.scale {
                 self.has_moved = true;
-                changed |= self.update_selection(cursor);
+                changed |= self.update_selection(cursor, false);
             }
+        }
+        if self.aim_hold && now.duration_since(self.last_move) >= AIM_STILLNESS {
+            changed |= self.update_selection(cursor, true);
         }
         changed |= self.check_dwell(now);
         let hover = self.over_close_button(cursor);
@@ -325,10 +335,11 @@ impl App {
         }
     }
 
-    fn update_selection(&mut self, cursor: POINT) -> bool {
+    fn update_selection(&mut self, cursor: POINT, force: bool) -> bool {
         let scale = self.style.scale;
         let dx = (cursor.x as f32 - self.center.0) / scale;
         let dy = (self.center.1 - cursor.y as f32) / scale;
+        let mut escape = false;
         let selection = match self.model.inner_tabs_window {
             Some(window) => {
                 let tab_count = self.model.inner_tab_items(window).len();
@@ -342,7 +353,7 @@ impl App {
                 let distance = dx.hypot(dy);
                 let ring_boundary = (INNER.1 + OUTER.0) / 2.0;
                 if tab_selection.is_none() && distance > ring_boundary && distance <= OUTER.1 {
-                    self.model.inner_tabs_window = None;
+                    escape = true;
                     self.normal_selection(dx, dy, None)
                 } else {
                     tab_selection
@@ -350,8 +361,24 @@ impl App {
             }
             None => self.normal_selection(dx, dy, self.model.selection),
         };
+        let point = (dx, dy);
+        let previous = std::mem::replace(&mut self.last_point, point);
         if selection == self.model.selection {
+            self.aim_hold = false;
             return false;
+        }
+        if !force
+            && self
+                .model
+                .aim(&self.geometry)
+                .is_some_and(|aim| aim.heading(previous, point))
+        {
+            self.aim_hold = true;
+            return false;
+        }
+        self.aim_hold = false;
+        if escape {
+            self.model.inner_tabs_window = None;
         }
         self.model.selection = selection;
         self.update_tab_mode(dx.hypot(dy) <= DEAD_ZONE);
@@ -519,7 +546,7 @@ impl App {
             unsafe {
                 let _ = GetCursorPos(&mut cursor);
             }
-            self.update_selection(cursor);
+            self.update_selection(cursor, true);
         }
         match self.model.selected_item() {
             Some(item) if self.over_close_button(cursor_pos()) => self.close_target(&item),
@@ -559,7 +586,7 @@ impl App {
         let now = Instant::now();
         self.reloads = RELOAD_DELAYS_MS
             .iter()
-            .map(|ms| now + std::time::Duration::from_millis(*ms))
+            .map(|ms| now + Duration::from_millis(*ms))
             .collect();
         self.redraw();
     }

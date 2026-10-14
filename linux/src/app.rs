@@ -35,6 +35,7 @@ const EDGE_MARGIN: f32 = 8.0;
 const RING_MARGIN: f32 = 44.0;
 const PREVIEW_GAP: f32 = 16.0;
 const TABS_STILLNESS: Duration = Duration::from_millis(150);
+const AIM_STILLNESS: Duration = Duration::from_millis(150);
 const RELOAD_DELAYS: [Duration; 2] = [Duration::from_millis(250), Duration::from_millis(1000)];
 
 enum Message {
@@ -79,6 +80,8 @@ struct App {
     dwell: Option<Selection>,
     close_button: Option<(f32, f32)>,
     close_hover: bool,
+    last_point: (f32, f32),
+    aim_hold: bool,
     reloads: Vec<Instant>,
     last_frame: Instant,
     last_live: Instant,
@@ -184,6 +187,8 @@ pub fn run() -> Result<(), String> {
         dwell: None,
         close_button: None,
         close_hover: false,
+        last_point: (0.0, 0.0),
+        aim_hold: false,
         reloads: Vec::new(),
         last_frame: Instant::now(),
         last_live: Instant::now(),
@@ -377,6 +382,8 @@ impl App {
         self.dwell = None;
         self.close_button = None;
         self.close_hover = false;
+        self.last_point = (0.0, 0.0);
+        self.aim_hold = false;
         self.reloads.clear();
 
         let cursor = self.cursor();
@@ -509,8 +516,11 @@ impl App {
                 .hypot((cursor.1 - self.open_cursor.1) as f32);
             if self.has_moved || moved >= MOVE_THRESHOLD * self.style.scale {
                 self.has_moved = true;
-                changed |= self.update_selection(cursor);
+                changed |= self.update_selection(cursor, false);
             }
+        }
+        if self.aim_hold && now.duration_since(self.last_move) >= AIM_STILLNESS {
+            changed |= self.update_selection(cursor, true);
         }
         changed |= self.check_dwell(now);
         let hover = self.over_close_button(cursor);
@@ -533,10 +543,11 @@ impl App {
         }
     }
 
-    fn update_selection(&mut self, cursor: (i32, i32)) -> bool {
+    fn update_selection(&mut self, cursor: (i32, i32), force: bool) -> bool {
         let scale = self.style.scale;
         let dx = (cursor.0 as f32 - self.center.0) / scale;
         let dy = (self.center.1 - cursor.1 as f32) / scale;
+        let mut escape = false;
         let selection = match self.model.inner_tabs_window {
             Some(window) => {
                 let tab_count = self.model.inner_tab_items(window).len();
@@ -550,7 +561,7 @@ impl App {
                 let distance = dx.hypot(dy);
                 let ring_boundary = (INNER.1 + OUTER.0) / 2.0;
                 if tab_selection.is_none() && distance > ring_boundary && distance <= OUTER.1 {
-                    self.model.inner_tabs_window = None;
+                    escape = true;
                     self.normal_selection(dx, dy, None)
                 } else {
                     tab_selection
@@ -558,8 +569,24 @@ impl App {
             }
             None => self.normal_selection(dx, dy, self.model.selection),
         };
+        let point = (dx, dy);
+        let previous = std::mem::replace(&mut self.last_point, point);
         if selection == self.model.selection {
+            self.aim_hold = false;
             return false;
+        }
+        if !force
+            && self
+                .model
+                .aim(&self.geometry)
+                .is_some_and(|aim| aim.heading(previous, point))
+        {
+            self.aim_hold = true;
+            return false;
+        }
+        self.aim_hold = false;
+        if escape {
+            self.model.inner_tabs_window = None;
         }
         debug(|| format!("selection {selection:?}"));
         self.model.selection = selection;
@@ -732,7 +759,7 @@ impl App {
     fn clicked(&mut self) {
         if self.has_moved {
             let cursor = self.cursor();
-            self.update_selection(cursor);
+            self.update_selection(cursor, true);
         }
         let cursor = self.cursor();
         match self.model.selected_item() {

@@ -22,6 +22,9 @@ final class RingController {
     private var hasMovedSinceOpen = false
     private static let moveThreshold: CGFloat = 4
     private var openFrontmost: NSRunningApplication?
+    private var lastPoint: CGPoint = .zero
+    private var isAimHeld = false
+    private static let aimStillness: TimeInterval = 0.15
     private var pendingReload: Task<Void, Never>?
 
     init() {
@@ -179,6 +182,8 @@ final class RingController {
         lastMouseLocation = NSEvent.mouseLocation
         openMouseLocation = NSEvent.mouseLocation
         hasMovedSinceOpen = false
+        lastPoint = .zero
+        isAimHeld = false
         mouseTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.mouseTick() }
         }
@@ -222,7 +227,12 @@ final class RingController {
 
     private func mouseTick() {
         let mouse = NSEvent.mouseLocation
-        guard mouse != lastMouseLocation else { return }
+        guard mouse != lastMouseLocation else {
+            if isAimHeld, Date().timeIntervalSince(lastMouseMoveTime) >= Self.aimStillness {
+                updateSelectionFromMouse(force: true)
+            }
+            return
+        }
         lastMouseLocation = mouse
         lastMouseMoveTime = Date()
         if !hasMovedSinceOpen {
@@ -242,9 +252,10 @@ final class RingController {
         return hypot(x - button.width, y - button.height) <= RingGeometry.closeButtonHitRadius
     }
 
-    private func updateSelectionFromMouse() {
+    private func updateSelectionFromMouse(force: Bool = false) {
         let mouse = NSEvent.mouseLocation
         let dx = mouse.x - screenCenter.x, dy = mouse.y - screenCenter.y
+        var escape = false
         let selection: RingSelection?
         if let tabsWindow = model.innerTabsWindowIndex {
             let tabSelection = RingGeometry.tabPopupSelection(
@@ -253,7 +264,7 @@ final class RingController {
             let distance = hypot(dx, dy)
             let ringBoundary = (RingGeometry.innerRadii.upperBound + RingGeometry.outerRadii.lowerBound) / 2
             if tabSelection == nil, distance > ringBoundary, distance <= RingGeometry.outerRadii.upperBound {
-                model.innerTabsWindowIndex = nil
+                escape = true
                 selection = normalSelection(dx: dx, dy: dy, current: nil)
             } else {
                 selection = tabSelection
@@ -261,7 +272,20 @@ final class RingController {
         } else {
             selection = normalSelection(dx: dx, dy: dy, current: model.selection)
         }
-        if selection != model.selection { model.selection = selection }
+        let point = CGPoint(x: dx, y: dy)
+        let previous = lastPoint
+        lastPoint = point
+        guard selection != model.selection else {
+            isAimHeld = false
+            return
+        }
+        if !force, let aim = model.aim, RingGeometry.isHeading(toward: aim, from: previous, to: point) {
+            isAimHeld = true
+            return
+        }
+        isAimHeld = false
+        if escape { model.innerTabsWindowIndex = nil }
+        model.selection = selection
     }
 
     private func normalSelection(dx: CGFloat, dy: CGFloat, current: RingSelection?) -> RingSelection? {
@@ -274,7 +298,7 @@ final class RingController {
     }
 
     private func clicked() {
-        if hasMovedSinceOpen { updateSelectionFromMouse() }
+        if hasMovedSinceOpen { updateSelectionFromMouse(force: true) }
         if let item = model.selectedItem, isOverCloseButton {
             closeTarget(item)
         } else if model.selectedItem != nil {
