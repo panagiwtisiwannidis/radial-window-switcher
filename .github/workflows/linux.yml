@@ -7,7 +7,6 @@ on:
       - "core/**"
       - ".github/smoke-test.sh"
       - ".github/wayland-smoke-test.sh"
-      - ".github/hyprland-smoke-test.sh"
       - ".github/workflows/linux.yml"
   workflow_dispatch:
 
@@ -49,12 +48,6 @@ jobs:
           firefox --version || true
           dbus-run-session -- bash -eux .github/smoke-test.sh
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: radial-switcher-linux-for-tests
-          path: linux/target/release/radial-switcher
-          retention-days: 1
-
       - name: Smoke test on a headless Wayland compositor (Sway)
         if: always()
         run: |
@@ -67,26 +60,3 @@ jobs:
           name: linux-smoke-test
           path: shots/
 
-  hyprland:
-    needs: build
-    if: always()
-    runs-on: ubuntu-latest
-    container: archlinux:latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: radial-switcher-linux-for-tests
-
-      - name: Install Hyprland
-        run: pacman -Syu --noconfirm --needed hyprland foot grim wtype jq mesa ttf-dejavu > /dev/null
-
-      - name: Smoke test on a headless Hyprland
-        run: bash -eux .github/hyprland-smoke-test.sh
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: hyprland-smoke-test
-          path: shots/

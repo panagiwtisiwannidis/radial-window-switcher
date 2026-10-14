@@ -169,15 +169,16 @@ rings, window and tab arcs, live previews and a tray icon. Prebuilt executables 
 
 ## Linux
 
-The Linux version lives in [`linux/`](linux/README.md): X11 sessions (Wayland doesn't allow window
-switchers), hold **Alt+Space**, with window and browser-tab arcs, live previews and a tray icon. Prebuilt binaries come
-from the **Linux build** GitHub Action, which also smoke-tests it on a virtual X11 desktop.
+The Linux version lives in [`linux/`](linux/README.md): X11 sessions and wlroots-based Wayland compositors
+(Hyprland, Sway, niri, river, …), hold **Alt+Space**, with window and browser-tab arcs, live previews (X11)
+and a tray icon. Prebuilt binaries come from the **Linux build** GitHub Action, which also smoke-tests it on
+a virtual X11 desktop and on a headless Sway.
 
 The ring layout, selection logic and drawing shared by Windows and Linux live in [`core/`](core).
 
 ## Roadmap
 
-- Wayland: per-desktop integrations (GNOME Shell / KWin extensions).
+- Wayland: window thumbnails and live previews; GNOME Shell extension and KWin script for GNOME/KDE.
 
 ## License
 
