@@ -1,6 +1,7 @@
 # Radial Switcher
 
-A radial window switcher for macOS (this page) and Windows (see [`windows/`](windows/README.md)). Hold **⌥Space** and a ring opens around the cursor: the windows of
+A radial window switcher for macOS (this page), Windows (see [`windows/`](windows/README.md)) and Linux/X11
+(see [`linux/`](linux/README.md)). Hold **⌥Space** and a ring opens around the cursor: the windows of
 the app you're in on the inside, every other open app on the outside. Aim with the mouse (or press Tab),
 let go, and that window comes to the front — including a specific window or browser tab of another app.
 
@@ -118,6 +119,8 @@ iconutil -c icns /tmp/AppIcon.iconset -o Support/AppIcon.icns
 | `Support/Info.plist`, `Support/AppIcon.icns` | App bundle metadata and icon |
 | `scripts/build-app.sh` | Build, package, sign, install |
 | `windows/` | The Windows version (Rust) |
+| `linux/` | The Linux/X11 version (Rust) |
+| `core/` | Ring logic and drawing shared by Windows and Linux |
 
 ## Notes
 
@@ -148,6 +151,15 @@ The Windows version lives in [`windows/`](windows/README.md): Rust, hold **Alt+S
 rings, window and tab arcs, live previews and a tray icon. Prebuilt executables come from the
 **Windows build** GitHub Action.
 
+## Linux
+
+The Linux version lives in [`linux/`](linux/README.md): X11 sessions (Wayland doesn't allow window
+switchers), hold **Alt+Space**, with window arcs, live previews and a tray icon. Prebuilt binaries come
+from the **Linux build** GitHub Action, which also smoke-tests it on a virtual X11 desktop.
+
+The ring layout, selection logic and drawing shared by Windows and Linux live in [`core/`](core).
+
 ## Roadmap
 
-- Linux version (X11 first; Wayland needs per-desktop extensions), reusing the Windows version's ring logic.
+- Linux: browser tab arcs through AT-SPI.
+- Wayland: per-desktop integrations (GNOME Shell / KWin extensions).
