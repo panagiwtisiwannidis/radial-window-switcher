@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use radial_core::model::{AppWindows, Icon, RingItem, RingModel, Target, WindowRef};
 use radial_core::render;
 use radial_core::text::Text;
-use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
+use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, Region};
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::calloop::channel::{self, Sender};
@@ -384,6 +384,9 @@ impl State {
                 .subcompositor
                 .create_subsurface(parent.clone(), &state.qh);
             subsurface.set_desync();
+            if let Ok(region) = Region::new(&state.compositor) {
+                surface.set_input_region(Some(region.wl_region()));
+            }
             Layered {
                 surface,
                 subsurface,
