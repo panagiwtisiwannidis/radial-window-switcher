@@ -53,10 +53,12 @@ user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
 user_pref("browser.tabs.warnOnClose", false);
 user_pref("browser.startup.page", 0);
 PREFS
+pages=$(mktemp -d)
+for name in Alpha Beta Gamma; do
+  printf '<!doctype html><title>%s tab</title><h1>%s</h1>' "$name" "$name" > "$pages/$name.html"
+done
 firefox --new-instance --profile "$profile" -width 900 -height 650 \
-  "data:text/html,<title>Alpha tab</title><h1>Alpha</h1>" \
-  "data:text/html,<title>Beta tab</title><h1>Beta</h1>" \
-  "data:text/html,<title>Gamma tab</title><h1>Gamma</h1>" > shots/firefox.log 2>&1 &
+  "file://$pages/Alpha.html" "file://$pages/Beta.html" "file://$pages/Gamma.html" > shots/firefox.log 2>&1 &
 for i in $(seq 1 60); do
   xdotool search --name "Mozilla Firefox" > /dev/null 2>&1 && break
   sleep 1

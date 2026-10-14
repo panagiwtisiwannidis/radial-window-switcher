@@ -30,14 +30,24 @@ pub struct Tabs {
 
 type Found = HashMap<isize, (Vec<TabInfo>, Vec<ObjectRefOwned>)>;
 
+fn debug(message: impl FnOnce() -> String) {
+    if std::env::var_os("RADIAL_SWITCHER_DEBUG").is_some() {
+        eprintln!("[debug] tabs: {}", message());
+    }
+}
+
 impl Tabs {
     pub fn start(ready: impl Fn() + Send + 'static) -> Self {
         let (requests, receiver) = channel::<Request>();
         let known = Arc::new(Mutex::new(HashMap::new()));
         let shared = known.clone();
         std::thread::spawn(move || {
-            let Ok(connection) = zbus::block_on(AccessibilityConnection::new()) else {
-                return;
+            let connection = match zbus::block_on(AccessibilityConnection::new()) {
+                Ok(connection) => connection,
+                Err(error) => {
+                    debug(|| format!("no accessibility bus: {error}"));
+                    return;
+                }
             };
             let mut elements: HashMap<isize, Vec<ObjectRefOwned>> = HashMap::new();
             let mut pids: HashMap<String, u32> = HashMap::new();
@@ -45,7 +55,10 @@ impl Tabs {
                 match request {
                     Request::Refresh(windows) => {
                         let found = zbus::block_on(read_all(&connection, &windows, &mut pids))
-                            .unwrap_or_default();
+                            .unwrap_or_else(|error| {
+                                debug(|| format!("reading failed: {error}"));
+                                Found::new()
+                            });
                         elements = found
                             .iter()
                             .map(|(w, (_, refs))| (*w, refs.clone()))
@@ -88,7 +101,15 @@ async fn read_all(
     let root = accessibility.root_accessible_on_registry().await?;
     let dbus = zbus::fdo::DBusProxy::new(conn).await?;
     let mut found = Found::new();
-    for app in root.get_children().await? {
+    let apps = root.get_children().await?;
+    debug(|| {
+        format!(
+            "{} accessible apps; window pids {:?}",
+            apps.len(),
+            windows.iter().map(|w| w.pid).collect::<Vec<_>>()
+        )
+    });
+    for app in apps {
         let Some(name) = app.name_as_str() else {
             continue;
         };
@@ -106,6 +127,12 @@ async fn read_all(
             }
         };
         let candidates: Vec<&WindowInfo> = windows.iter().filter(|w| w.pid == pid).collect();
+        debug(|| {
+            format!(
+                "app {name} pid {pid}: {} matching windows",
+                candidates.len()
+            )
+        });
         if candidates.is_empty() {
             continue;
         }
@@ -129,8 +156,14 @@ async fn read_all(
                             || title.starts_with(&w.title))
                 })
                 .or_else(|| (candidates.len() == 1).then(|| &candidates[0]));
+            debug(|| format!("frame {title:?} -> window {:?}", window.map(|w| &w.title)));
             let Some(window) = window else { continue };
-            if let Ok(tabs) = read_tabs(conn, &frame).await {
+            let result = read_tabs(conn, &frame).await;
+            debug(|| match &result {
+                Ok((tabs, _)) => format!("{:?}", tabs.iter().map(|t| &t.title).collect::<Vec<_>>()),
+                Err(error) => format!("no tabs: {error}"),
+            });
+            if let Ok(tabs) = result {
                 if tabs.0.len() >= 2 {
                     found.insert(window.handle, tabs);
                 }
