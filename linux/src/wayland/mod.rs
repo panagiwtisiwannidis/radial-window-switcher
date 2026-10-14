@@ -1,5 +1,6 @@
 mod control;
 mod ipc;
+mod keymap;
 mod toplevels;
 
 use std::collections::HashMap;
@@ -44,17 +45,11 @@ use crate::tabs::{Tabs, WindowInfo};
 use crate::tray;
 
 pub use control::send;
+use keymap::{Key, Keymap};
 use toplevels::{ManagerData, Toplevels};
 
 const TICK: Duration = Duration::from_millis(8);
 const POINTER_WAIT: Duration = Duration::from_millis(150);
-const KEY_ESC: u32 = 1;
-const KEY_TAB: u32 = 15;
-const KEY_ENTER: u32 = 28;
-const KEY_KP_ENTER: u32 = 96;
-const KEY_SPACE: u32 = 57;
-const KEY_LEFT_SHIFT: u32 = 42;
-const KEY_RIGHT_SHIFT: u32 = 54;
 const BTN_LEFT: u32 = 0x110;
 const BTN_RIGHT: u32 = 0x111;
 
@@ -112,6 +107,7 @@ pub struct State {
     cursor: Option<(f64, f64)>,
     scale: i32,
     shift: bool,
+    keymap: Keymap,
     pending: Option<RingModel>,
     qh: QueueHandle<State>,
     loop_handle: LoopHandle<'static, State>,
@@ -203,6 +199,7 @@ pub fn run() -> Result<(), String> {
         cursor: None,
         scale: 1,
         shift: false,
+        keymap: Keymap::default(),
         pending: None,
         qh,
         loop_handle,
@@ -646,21 +643,23 @@ impl State {
         self.redraw();
     }
 
-    fn key(&mut self, key: u32, pressed: bool) {
+    fn key(&mut self, code: u32, pressed: bool) {
+        let key = self.keymap.key(code);
+        debug(|| format!("wayland: key {code} {key:?} pressed {pressed}"));
         match key {
-            KEY_LEFT_SHIFT | KEY_RIGHT_SHIFT => self.shift = pressed,
+            Some(Key::Shift) => self.shift = pressed,
             _ if !self.started => {}
-            KEY_SPACE if !pressed => {
+            Some(Key::Space) if !pressed => {
                 if self.ring.model.selected_item().is_some() {
                     self.confirm();
                 }
             }
-            KEY_TAB if pressed => {
+            Some(Key::Tab) if pressed => {
                 self.ring.model.move_selection(!self.shift);
                 self.redraw();
             }
-            KEY_ENTER | KEY_KP_ENTER if pressed => self.confirm(),
-            KEY_ESC if pressed => self.close(),
+            Some(Key::Enter) if pressed => self.confirm(),
+            Some(Key::Escape) if pressed => self.close(),
             _ => {}
         }
     }
@@ -678,22 +677,32 @@ impl Dispatch2<wl_keyboard::WlKeyboard, State> for KeyboardData {
         _: &QueueHandle<State>,
     ) {
         match event {
+            wl_keyboard::Event::Keymap { fd, size, .. } => {
+                let file = std::fs::File::from(fd);
+                let mut data = vec![0u8; size as usize];
+                if std::os::unix::fs::FileExt::read_exact_at(&file, &mut data, 0).is_ok() {
+                    let text = String::from_utf8_lossy(&data);
+                    let text = text.trim_end_matches('\0');
+                    match Keymap::parse(text) {
+                        Some(map) => state.keymap = map,
+                        None => {
+                            debug(|| "wayland: keymap not understood, using evdev codes".into())
+                        }
+                    }
+                }
+            }
             wl_keyboard::Event::Enter { keys, .. } => {
-                let pressed: Vec<u32> = keys
+                state.shift = keys
                     .as_chunks::<4>()
                     .0
                     .iter()
-                    .map(|c| u32::from_ne_bytes(*c))
-                    .collect();
-                state.shift =
-                    pressed.contains(&KEY_LEFT_SHIFT) || pressed.contains(&KEY_RIGHT_SHIFT);
+                    .any(|c| state.keymap.key(u32::from_ne_bytes(*c)) == Some(Key::Shift));
             }
             wl_keyboard::Event::Key {
                 key,
                 state: WEnum::Value(key_state),
                 ..
             } => {
-                debug(|| format!("wayland: key {key} {key_state:?}"));
                 state.key(key, key_state == wl_keyboard::KeyState::Pressed);
             }
             _ => {}

@@ -50,18 +50,22 @@ sleep 0.2
 wlrctl pointer move 0 45
 sleep 1
 grim shots/wayland/2-other-window-selected.png
-wlrctl pointer click left
+wtype -k Return
 sleep 1.5
-grim shots/wayland/3-after-click.png
+grim shots/wayland/3-after-enter.png
 after=$(focused)
-if [ "$after" != "Second terminal" ]; then
-  echo "click did not switch; trying Enter"
-  wtype -k Return
-  sleep 1.5
-  grim shots/wayland/4-after-enter.png
-  after=$(focused)
-fi
-echo "wayland window switch: $before -> $after" | tee shots/wayland/result.txt
-cat shots/wayland/app.log
+echo "wayland pointer + Enter: $before -> $after" | tee shots/wayland/result.txt
 test "$before" = "First terminal"
 test "$after" = "Second terminal"
+
+./linux/target/release/radial-switcher show
+sleep 1.5
+wtype -k Tab
+sleep 0.5
+grim shots/wayland/4-tab-key.png
+wtype -k Return
+sleep 1.5
+again=$(focused)
+echo "wayland Tab + Enter: $after -> $again" | tee -a shots/wayland/result.txt
+cat shots/wayland/app.log
+test "$again" = "First terminal"

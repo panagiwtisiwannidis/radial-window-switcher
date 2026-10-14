@@ -23,6 +23,10 @@ jobs:
         working-directory: core
         run: cargo test --release
 
+      - name: Test Linux app
+        working-directory: linux
+        run: cargo test --release
+
       - name: Lint
         working-directory: linux
         run: cargo clippy --release --all-targets -- -D warnings
