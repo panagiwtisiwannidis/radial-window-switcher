@@ -191,6 +191,12 @@ pub fn run() -> Result<(), String> {
     Ok(())
 }
 
+fn debug(message: impl FnOnce() -> String) {
+    if std::env::var_os("RADIAL_SWITCHER_DEBUG").is_some() {
+        eprintln!("[debug] {}", message());
+    }
+}
+
 fn tray_sender(sender: Sender<Message>) -> Sender<tray::Command> {
     let (tray_sender, tray_receiver) = channel::<tray::Command>();
     std::thread::spawn(move || {
@@ -211,6 +217,12 @@ impl App {
     fn handle(&mut self, event: Event) {
         match event {
             Event::KeyPress(key) => {
+                debug(|| {
+                    format!(
+                        "key press {} state {:?} open {}",
+                        key.detail, key.state, self.open
+                    )
+                });
                 self.time = key.time;
                 let shift = u16::from(key.state) & u16::from(KeyButMask::SHIFT) != 0;
                 if key.detail == self.keys.space {
@@ -227,6 +239,14 @@ impl App {
                 }
             }
             Event::KeyRelease(key) => {
+                debug(|| {
+                    format!(
+                        "key release {} open {} selected {:?}",
+                        key.detail,
+                        self.open,
+                        self.model.selected_item().map(|i| i.full_title)
+                    )
+                });
                 self.time = key.time;
                 if key.detail == self.keys.space
                     && self.open
@@ -374,24 +394,40 @@ impl App {
         self.redraw();
 
         let conn = self.conn.as_ref();
-        let _ = conn.grab_keyboard(
-            false,
-            self.root(),
-            self.time,
-            GrabMode::ASYNC,
-            GrabMode::ASYNC,
-        );
+        let keyboard = conn
+            .grab_keyboard(
+                false,
+                self.root(),
+                self.time,
+                GrabMode::ASYNC,
+                GrabMode::ASYNC,
+            )
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .map(|r| r.status);
         let mask = EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE | EventMask::POINTER_MOTION;
-        let _ = conn.grab_pointer(
-            false,
-            self.overlay.window,
-            mask,
-            GrabMode::ASYNC,
-            GrabMode::ASYNC,
-            x11rb::NONE,
-            x11rb::NONE,
-            self.time,
-        );
+        let pointer = conn
+            .grab_pointer(
+                false,
+                self.overlay.window,
+                mask,
+                GrabMode::ASYNC,
+                GrabMode::ASYNC,
+                x11rb::NONE,
+                x11rb::NONE,
+                self.time,
+            )
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .map(|r| r.status);
+        debug(|| {
+            format!(
+                "opened at {:?}: {} inner, {} outer; keyboard grab {keyboard:?}, pointer grab {pointer:?}",
+                self.center,
+                self.model.inner.len(),
+                self.model.outer.len()
+            )
+        });
         let _ = conn.flush();
     }
 
@@ -458,6 +494,7 @@ impl App {
         if selection == self.model.selection {
             return false;
         }
+        debug(|| format!("selection {selection:?}"));
         self.model.selection = selection;
         self.live_image = None;
         self.last_live = Instant::now() - LIVE_INTERVAL;
@@ -573,12 +610,20 @@ impl App {
             [2, self.time, 0, 0, 0],
         );
         let conn = self.conn.as_ref();
-        let _ = conn.send_event(
-            false,
-            self.root(),
-            EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
-            event,
-        );
+        let sent = conn
+            .send_event(
+                false,
+                self.root(),
+                EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
+                event,
+            )
+            .map(|c| c.check());
+        debug(|| {
+            format!(
+                "activate {} (0x{window:x}) at time {}: {sent:?}",
+                item.full_title, self.time
+            )
+        });
         let _ = conn.flush();
     }
 }

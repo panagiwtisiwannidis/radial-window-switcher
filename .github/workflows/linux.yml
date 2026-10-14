@@ -43,7 +43,7 @@ jobs:
           Xvfb :99 -screen 0 1600x1000x24 +extension Composite +extension RANDR &
           sleep 2
           xsetroot -solid "#3b5b8a"
-          ./linux/target/release/radial-switcher > app.log 2>&1 &
+          RADIAL_SWITCHER_DEBUG=1 ./linux/target/release/radial-switcher > app.log 2>&1 &
           sleep 2
           openbox &
           sleep 1
@@ -64,13 +64,13 @@ jobs:
           xdotool keydown alt keydown space
           sleep 1.5
           import -window root shots/1-ring-open.png
-          xdotool mousemove 800 680
+          xdotool mousemove 800 610
           sleep 1
           import -window root shots/2-other-window-selected.png
           xdotool mousemove 1000 380
           sleep 1
           import -window root shots/3-outer-app-hover.png
-          xdotool mousemove 800 680
+          xdotool mousemove 800 610
           sleep 0.8
           xdotool keyup space keyup alt
           sleep 1.5
