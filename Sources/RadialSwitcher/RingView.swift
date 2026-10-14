@@ -53,7 +53,7 @@ struct RingView: View {
             }
             hub
             if let item = model.selectedItem {
-                PreviewCard(item: item, thumbnail: previewThumbnail(for: item))
+                PreviewCard(item: item, thumbnail: thumbnail(for: item))
                     .offset(x: model.previewOffsetX)
                     .transition(.opacity)
             }
@@ -89,7 +89,7 @@ struct RingView: View {
                     state: isSelected ? .selected : isParentOfSelection ? .parent : .normal,
                     isCloseHovered: model.isCloseHovered) {
                 if case .tab = item.target {
-                    TabArcLabel(item: item, thumbnail: previewThumbnail(for: item), isSelected: isSelected,
+                    TabArcLabel(item: item, thumbnail: thumbnail(for: item), isSelected: isSelected,
                                 width: (bounds.end - bounds.start) * (radii.lowerBound + radii.upperBound) / 2 - 8)
                 } else {
                     SegmentLabel(item: item, level: level, isSelected: isSelected,
@@ -111,7 +111,7 @@ struct RingView: View {
             Segment(bounds: bounds[index], radii: radii, gap: 3,
                     state: isSelected ? .selected : isParentOfSelection ? .parent : .normal, emphasis: .tab,
                     isCloseHovered: model.isCloseHovered) {
-                TabArcLabel(item: window, thumbnail: previewThumbnail(for: window), isSelected: isSelected,
+                TabArcLabel(item: window, thumbnail: thumbnail(for: window), isSelected: isSelected,
                             width: (bounds[index].end - bounds[index].start) * (radii.lowerBound + radii.upperBound) / 2 - 8,
                             thumbnailHeight: 66)
             }
@@ -132,7 +132,7 @@ struct RingView: View {
                 let midRadius = (arc.radii.lowerBound + arc.radii.upperBound) / 2
                 Segment(bounds: bounds, radii: arc.radii, gap: 2, state: isSelected ? .selected : .normal, emphasis: .tab,
                         isCloseHovered: model.isCloseHovered) {
-                    TabArcLabel(item: tab, thumbnail: previewThumbnail(for: tab), isSelected: isSelected,
+                    TabArcLabel(item: tab, thumbnail: thumbnail(for: tab), isSelected: isSelected,
                                 width: (bounds.end - bounds.start) * midRadius - 8, thumbnailHeight: 66)
                 }
             }
@@ -147,21 +147,20 @@ struct RingView: View {
             let isSelected = model.selection == RingSelection(level: .outer, index: index)
             Segment(bounds: bounds[index], radii: radii, gap: 3, state: isSelected ? .selected : .normal, emphasis: .tab,
                     isCloseHovered: model.isCloseHovered) {
-                TabArcLabel(item: tab, thumbnail: previewThumbnail(for: tab), isSelected: isSelected,
+                TabArcLabel(item: tab, thumbnail: thumbnail(for: tab), isSelected: isSelected,
                             width: (bounds[index].end - bounds[index].start) * midRadius - 8, thumbnailHeight: 66)
             }
         }
     }
 
-    private func previewThumbnail(for item: RingItem) -> NSImage? {
-        guard let id = item.previewWindow?.windowID else { return nil }
+    private func thumbnail(for item: RingItem) -> Thumbnail {
+        guard let id = item.previewWindow?.windowID else { return Thumbnail(still: nil, liveWindowID: nil, live: model.live) }
         if case .tab(let tab, _) = item.target {
-            if tab.isActive, let live = model.liveFrame, live.windowID == id { return live.image }
             let tabSnapshot = model.tabThumbnails[ThumbnailStore.tabKey(windowID: id, title: tab.title)]
-            return tabSnapshot ?? (tab.isActive ? model.thumbnails[id] : nil)
+            return Thumbnail(still: tabSnapshot ?? (tab.isActive ? model.thumbnails[id] : nil),
+                             liveWindowID: tab.isActive ? id : nil, live: model.live)
         }
-        if let live = model.liveFrame, live.windowID == id { return live.image }
-        return model.thumbnails[id]
+        return Thumbnail(still: model.thumbnails[id], liveWindowID: id, live: model.live)
     }
 
     private func iconSize(count: Int, radii: ClosedRange<CGFloat>) -> CGFloat {
@@ -289,11 +288,41 @@ enum PreviewLayout {
     static let distanceFromCenter = RingGeometry.maxRadius + 16 + cardWidth / 2
 }
 
-private struct PreviewCard: View {
-    let item: RingItem
-    let thumbnail: NSImage?
+struct Thumbnail {
+    let still: NSImage?
+    let liveWindowID: CGWindowID?
+    let live: LiveFrame
+}
+
+private struct ThumbnailReader<Content: View>: View {
+    @ObservedObject var live: LiveFrame
+    let thumbnail: Thumbnail
+    @ViewBuilder let content: (NSImage?) -> Content
+
+    init(_ thumbnail: Thumbnail, @ViewBuilder content: @escaping (NSImage?) -> Content) {
+        live = thumbnail.live
+        self.thumbnail = thumbnail
+        self.content = content
+    }
 
     var body: some View {
+        if let frame = live.frame, let id = thumbnail.liveWindowID, frame.windowID == id {
+            content(frame.image)
+        } else {
+            content(thumbnail.still)
+        }
+    }
+}
+
+private struct PreviewCard: View {
+    let item: RingItem
+    let thumbnail: Thumbnail
+
+    var body: some View {
+        ThumbnailReader(thumbnail) { image in card(image) }
+    }
+
+    private func card(_ thumbnail: NSImage?) -> some View {
         VStack(spacing: 8) {
             Group {
                 if let thumbnail {
@@ -355,15 +384,19 @@ private struct SegmentLabel: View {
 
 private struct TabArcLabel: View {
     let item: RingItem
-    let thumbnail: NSImage?
+    let thumbnail: Thumbnail
     let isSelected: Bool
     let width: CGFloat
     var thumbnailHeight: CGFloat = 34
 
     var body: some View {
+        ThumbnailReader(thumbnail) { image in label(image) }
+    }
+
+    private func label(_ thumbnail: NSImage?) -> some View {
         let isActive: Bool = if case .tab(let tab, _) = item.target { tab.isActive } else { false }
         let width = max(width, 20)
-        VStack(spacing: 2) {
+        return VStack(spacing: 2) {
             if let thumbnail {
                 Image(nsImage: thumbnail)
                     .resizable()

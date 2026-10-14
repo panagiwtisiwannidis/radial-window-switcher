@@ -35,6 +35,11 @@ struct RingSelection: Equatable {
 }
 
 @MainActor
+final class LiveFrame: ObservableObject {
+    @Published var frame: (windowID: CGWindowID, image: NSImage)?
+}
+
+@MainActor
 final class RingModel: ObservableObject {
     @Published var inner: [RingItem] = []
     @Published var outer: [RingItem] = []
@@ -47,7 +52,7 @@ final class RingModel: ObservableObject {
     @Published var previewOffsetX: CGFloat = 0
     @Published var thumbnails: [CGWindowID: NSImage] = [:]
     @Published var tabThumbnails: [String: NSImage] = [:]
-    @Published var liveFrame: (windowID: CGWindowID, image: NSImage)?
+    let live = LiveFrame()
     @Published var tabsByWindow: [CGWindowID: [TabInfo]] = [:]
     @Published var innerTabsWindowIndex: Int?
     @Published var isCloseHovered = false

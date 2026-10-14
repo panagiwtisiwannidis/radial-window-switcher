@@ -31,7 +31,7 @@ final class RingController {
         model.onSelectionChange = { [weak self] in self?.selectionChanged() }
         livePreview.onFrame = { [weak self] id, image in
             self?.lastLiveFrame = (id, image)
-            self?.model.liveFrame = (id, NSImage(cgImage: image, size: .zero))
+            self?.model.live.frame = (id, NSImage(cgImage: image, size: .zero))
         }
     }
     private var panel: RingPanel?
@@ -426,7 +426,7 @@ final class RingController {
         livePreview.stop()
         if let frame = lastLiveFrame { store.record(frame.image, windowID: frame.windowID, title: liveWindowTitle) }
         lastLiveFrame = nil
-        model.liveFrame = nil
+        model.live.frame = nil
     }
 
     private func close() {
