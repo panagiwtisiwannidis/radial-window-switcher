@@ -74,7 +74,18 @@ You can reopen this window any time from the menu bar icon → **Permissions…*
 If you release ⌥Space with nothing selected, the ring stays open: pick with a click, Tab + Return, or
 dismiss with Esc. Only what's under the cursor (highlighted, shown in the preview card) is ever opened.
 
-The menu bar icon also has **Open at Login** and **Quit**.
+## Start at login
+
+To have Radial Switcher start automatically whenever you log in to your Mac, click its menu bar icon
+and choose **Open at Login** (a checkmark shows it's on; choose it again to turn it off). It then also
+appears in System Settings → General → Login Items & Extensions, where it can be managed too.
+
+Open at Login works best with the app in `/Applications` (where `--install` puts it).
+
+## Quit
+
+Menu bar icon → **Quit Radial Switcher**. To start it again, open **Radial Switcher** from Applications,
+Spotlight or Launchpad.
 
 ## Development
 
@@ -121,7 +132,7 @@ iconutil -c icns /tmp/AppIcon.iconset -o Support/AppIcon.icns
 
 ## Uninstall
 
-Quit from the menu bar icon, then:
+Turn off **Open at Login** and quit from the menu bar icon, then:
 
 ```bash
 rm -rf /Applications/RadialSwitcher.app ~/Library/Caches/RadialSwitcher
