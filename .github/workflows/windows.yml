@@ -1,0 +1,35 @@
+name: Windows build
+
+on:
+  push:
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy
+
+      - name: Test
+        run: cargo test --release
+
+      - name: Lint
+        run: cargo clippy --release -- -D warnings -A clippy::field_reassign_with_default -A clippy::type_complexity -A clippy::manual_checked_ops -A clippy::chunks_exact_with_const_size
+
+      - name: Build
+        run: cargo build --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RadialSwitcher-windows
+          path: windows/target/release/RadialSwitcher.exe
+          if-no-files-found: error

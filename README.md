@@ -1,6 +1,6 @@
 # Radial Switcher
 
-A radial window switcher for macOS. Hold **⌥Space** and a ring opens around the cursor: the windows of
+A radial window switcher for macOS (this page) and Windows (see [`windows/`](windows/README.md)). Hold **⌥Space** and a ring opens around the cursor: the windows of
 the app you're in on the inside, every other open app on the outside. Aim with the mouse (or press Tab),
 let go, and that window comes to the front — including a specific window or browser tab of another app.
 
@@ -117,6 +117,7 @@ iconutil -c icns /tmp/AppIcon.iconset -o Support/AppIcon.icns
 | `Sources/RadialSwitcher/` | The app (Swift, AppKit + SwiftUI) |
 | `Support/Info.plist`, `Support/AppIcon.icns` | App bundle metadata and icon |
 | `scripts/build-app.sh` | Build, package, sign, install |
+| `windows/` | The Windows version (Rust) |
 
 ## Notes
 
@@ -141,7 +142,12 @@ rm -rf /Applications/RadialSwitcher.app ~/Library/Caches/RadialSwitcher
 and remove Radial Switcher from System Settings → Privacy & Security → Accessibility and Screen & System
 Audio Recording.
 
+## Windows
+
+The Windows version lives in [`windows/`](windows/README.md): Rust, hold **Alt+Space**, with live window
+previews and a tray icon. Prebuilt executables come from the **Windows build** GitHub Action.
+
 ## Roadmap
 
-- Windows version (Rust, sharing the ring geometry/selection logic).
-- Linux version (X11 first; Wayland needs per-desktop extensions).
+- Windows: browser tab arcs, thumbnails in the ring, animations.
+- Linux version (X11 first; Wayland needs per-desktop extensions), reusing the Windows version's ring logic.
