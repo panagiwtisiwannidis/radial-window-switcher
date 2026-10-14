@@ -53,7 +53,7 @@ final class RingController {
     }
 
     private func snapshotVisibleWindows() async {
-        guard !isVisible, !isSnapshotting else { return }
+        guard !isVisible, !isSnapshotting, Permissions.screenRecordingGranted(prompt: false) else { return }
         isSnapshotting = true
         defer { isSnapshotting = false }
 
@@ -102,6 +102,7 @@ final class RingController {
     }
 
     private func refreshThumbnails(liveWindowIDs: Set<CGWindowID>) async {
+        guard Permissions.screenRecordingGranted(prompt: false) else { return }
         let items = model.inner + model.outer + model.outer.flatMap(\.windows)
         let targets = items.compactMap(\.previewWindow)
         let started = Date()
@@ -118,7 +119,7 @@ final class RingController {
 
     private func listWindows() async -> [WindowInfo] {
         let started = Date()
-        let windows = (try? await WindowEnumerator.listWindows(useScreenCaptureKit: true)) ?? []
+        let windows = (try? await WindowEnumerator.listWindows(useScreenCaptureKit: Permissions.screenRecordingGranted(prompt: false))) ?? []
         print(String(format: "Listed %d windows in %.0f ms", windows.count, Date().timeIntervalSince(started) * 1000))
         return windows
     }
