@@ -7,6 +7,14 @@ let go, and that window comes to the front.
 > **Status: early.** Built, linted and smoke-tested on CI (a virtual X11 desktop opens the ring,
 > switches windows and switches Firefox tabs), not yet tried on a real desktop. Please report anything that doesn't work.
 
+<p align="center">
+  <img src="../docs/screenshots/linux-windows.png" alt="Radial Switcher on Linux: the current app's windows on the inner ring, other apps on the outer ring, and the windows of the app under the cursor fanned out above it, with a large preview" width="760">
+</p>
+
+<p align="center">
+  <img src="../docs/screenshots/linux-tabs.png" alt="Radial Switcher on Linux: resting on a browser window pops up its tabs, each with a thumbnail, and the tab under the cursor is previewed" width="760">
+</p>
+
 ## Requirements
 
 - An **X11 session**. Wayland doesn't let apps list, preview or focus other apps' windows, so Radial
@@ -106,6 +114,16 @@ cd linux
 cargo clippy --all-targets -- -D warnings
 cargo check --target x86_64-unknown-linux-gnu   # from macOS
 ```
+
+The screenshots above are rendered from sample content, not real windows:
+
+```bash
+cd core
+cargo run --release --example demo -- <icons dir> linux windows ../docs/screenshots/linux-windows.png
+cargo run --release --example demo -- <icons dir> linux tabs ../docs/screenshots/linux-tabs.png
+```
+
+`<icons dir>` holds one 128×128 PNG per sample app (`Safari.png`, `Notes.png`, `Mail.png`, …).
 
 | Path | What |
 |---|---|

@@ -7,6 +7,14 @@ Tab), let go, and that window comes to the front.
 > **Status: early.** This version has been built and unit-tested on CI, but not yet tried on a real
 > Windows PC. Please report anything that doesn't work.
 
+<p align="center">
+  <img src="../docs/screenshots/windows-windows.png" alt="Radial Switcher on Windows: the current app's windows on the inner ring, other apps on the outer ring, and the windows of the app under the cursor fanned out above it, with a large preview" width="760">
+</p>
+
+<p align="center">
+  <img src="../docs/screenshots/windows-tabs.png" alt="Radial Switcher on Windows: resting on a browser window pops up its tabs, each with a thumbnail, and the tab under the cursor is previewed" width="760">
+</p>
+
 ## Features
 
 - Two rings: inner = windows of the foreground app, outer = all other apps (Microsoft Store apps
@@ -85,6 +93,16 @@ cargo run --example preview -- .  # render sample rings to PNG (any OS)
 cargo run --example make_ico      # regenerate assets/app.ico
 cargo check --target x86_64-pc-windows-msvc   # type-check the Windows code from macOS/Linux
 ```
+
+The screenshots above are rendered from sample content, not real windows:
+
+```bash
+cd core
+cargo run --release --example demo -- <icons dir> windows windows ../docs/screenshots/windows-windows.png
+cargo run --release --example demo -- <icons dir> windows tabs ../docs/screenshots/windows-tabs.png
+```
+
+`<icons dir>` holds one 128×128 PNG per sample app (`Safari.png`, `Notes.png`, `Mail.png`, …).
 
 | Path | What |
 |---|---|
