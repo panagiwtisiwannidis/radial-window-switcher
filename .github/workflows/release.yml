@@ -93,6 +93,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -la dist
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            exit 0
+          fi
           draft=()
           if [ "${{ github.event_name }}" != "push" ]; then draft=(--draft); fi
           gh release create "$TAG" dist/* \
