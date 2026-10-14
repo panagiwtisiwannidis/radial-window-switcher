@@ -38,7 +38,7 @@ jobs:
       - name: Smoke test on a virtual X11 desktop
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb openbox xcompmgr xterm xdotool imagemagick x11-xserver-utils fonts-dejavu-core > /dev/null
+          sudo apt-get install -y -qq xvfb openbox xcompmgr xterm x11-apps xdotool imagemagick x11-xserver-utils fonts-dejavu-core > /dev/null
           export DISPLAY=:99
           Xvfb :99 -screen 0 1600x1000x24 +extension Composite +extension RANDR &
           sleep 2
@@ -48,30 +48,39 @@ jobs:
           openbox &
           sleep 1
           xcompmgr &
-          xterm -title "First terminal" -geometry 90x30+80+80 &
-          xterm -title "Second terminal" -geometry 90x30+700+300 &
+          xclock -geometry 200x200+1300+60 &
+          xeyes -geometry 200x150+1300+700 &
+          xterm -T "Second terminal" -geometry 90x30+700+300 -e sh -c 'echo SECOND; sleep 600' &
+          sleep 1
+          xterm -T "First terminal" -geometry 90x30+80+80 -e sh -c 'echo FIRST; sleep 600' &
           sleep 3
           mkdir -p shots
-          xdotool getactivewindow getwindowname > shots/active-before.txt || true
+          xdotool search --name "First terminal" windowactivate --sync
+          sleep 1
+          before=$(xdotool getactivewindow getwindowname)
+          echo "active before: $before" | tee shots/result.txt
           xdotool mousemove 800 520
           sleep 0.5
           xdotool keydown alt keydown space
           sleep 1.5
           import -window root shots/1-ring-open.png
-          xdotool mousemove 800 360
+          xdotool mousemove 800 680
+          sleep 1
+          import -window root shots/2-other-window-selected.png
+          xdotool mousemove 1000 380
+          sleep 1
+          import -window root shots/3-outer-app-hover.png
+          xdotool mousemove 800 680
           sleep 0.8
-          import -window root shots/2-inner-selected.png
-          xdotool mousemove 980 520
-          sleep 0.8
-          import -window root shots/3-outer-hover.png
-          xdotool mousemove 800 360
-          sleep 0.5
           xdotool keyup space keyup alt
           sleep 1.5
           import -window root shots/4-after-switch.png
-          xdotool getactivewindow getwindowname > shots/active-after.txt || true
+          after=$(xdotool getactivewindow getwindowname)
+          echo "active after: $after" | tee -a shots/result.txt
           cp app.log shots/app.log
-          cat shots/app.log shots/active-before.txt shots/active-after.txt
+          cat shots/app.log
+          test "$before" = "First terminal"
+          test "$after" = "Second terminal"
 
       - uses: actions/upload-artifact@v4
         if: always()
