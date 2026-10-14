@@ -1,12 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 
 use atspi::proxy::accessible::{AccessibleProxy, ObjectRefExt};
 use atspi::proxy::proxy_ext::ProxyExt;
-use atspi::{
-    AccessibilityConnection, MatchType, ObjectMatchRule, ObjectRefOwned, Role, SortOrder, State,
-};
+use atspi::{AccessibilityConnection, ObjectRefOwned, Role, State};
 use radial_core::model::TabInfo;
 use zbus::names::BusName;
 
@@ -27,6 +25,16 @@ pub struct Tabs {
     requests: Sender<Request>,
     known: Arc<Mutex<HashMap<isize, Vec<TabInfo>>>>,
 }
+
+const MAX_DEPTH: usize = 14;
+const MAX_NODES: usize = 1500;
+const SKIPPED: [Role; 5] = [
+    Role::DocumentWeb,
+    Role::DocumentFrame,
+    Role::InternalFrame,
+    Role::MenuBar,
+    Role::Menu,
+];
 
 type Found = HashMap<isize, (Vec<TabInfo>, Vec<ObjectRefOwned>)>;
 
@@ -177,18 +185,7 @@ async fn read_tabs(
     conn: &zbus::Connection,
     frame: &AccessibleProxy<'_>,
 ) -> Result<(Vec<TabInfo>, Vec<ObjectRefOwned>), Box<dyn std::error::Error>> {
-    let collection = frame.proxies().await?.collection().await?;
-    let strips = collection
-        .get_matches(
-            ObjectMatchRule::builder()
-                .roles(&[Role::PageTabList], MatchType::All)
-                .build(),
-            SortOrder::Canonical,
-            1,
-            false,
-        )
-        .await?;
-    let strip = strips.into_iter().next().ok_or("no tab strip")?;
+    let strip = find_strip(conn, frame).await?;
     let strip = strip.as_accessible_proxy(conn).await?;
     let mut tabs = Vec::new();
     let mut refs = Vec::new();
@@ -208,6 +205,56 @@ async fn read_tabs(
         refs.push(child);
     }
     Ok((tabs, refs))
+}
+
+async fn find_strip(
+    conn: &zbus::Connection,
+    frame: &AccessibleProxy<'_>,
+) -> Result<ObjectRefOwned, Box<dyn std::error::Error>> {
+    let mut queue: VecDeque<(ObjectRefOwned, usize)> = frame
+        .get_children()
+        .await?
+        .into_iter()
+        .map(|child| (child, 1))
+        .collect();
+    let mut visited = 0;
+    let mut seen = Vec::new();
+    while let Some((node, depth)) = queue.pop_front() {
+        visited += 1;
+        if visited > MAX_NODES {
+            break;
+        }
+        let Ok(proxy) = node.as_accessible_proxy(conn).await else {
+            continue;
+        };
+        let Ok(role) = proxy.get_role().await else {
+            continue;
+        };
+        if role == Role::PageTabList {
+            let mut tabs = 0;
+            for child in proxy.get_children().await.unwrap_or_default() {
+                if let Ok(child) = child.as_accessible_proxy(conn).await {
+                    if child.get_role().await.ok() == Some(Role::PageTab) {
+                        tabs += 1;
+                    }
+                }
+            }
+            if tabs > 0 {
+                return Ok(node);
+            }
+        }
+        if depth <= 3 {
+            seen.push(format!("{depth}:{role:?}"));
+        }
+        if depth >= MAX_DEPTH || SKIPPED.contains(&role) {
+            continue;
+        }
+        for child in proxy.get_children().await.unwrap_or_default() {
+            queue.push_back((child, depth + 1));
+        }
+    }
+    debug(|| format!("visited {visited}, near the top: {}", seen.join(" ")));
+    Err("no tab strip".into())
 }
 
 async fn select(
