@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "windows/**"
+      - "core/**"
       - ".github/workflows/windows.yml"
   workflow_dispatch:
 
@@ -19,7 +20,8 @@ jobs:
       - name: Install Rust
         run: rustup toolchain install stable --profile minimal --component clippy
 
-      - name: Test
+      - name: Test shared core
+        working-directory: core
         run: cargo test --release
 
       - name: Lint

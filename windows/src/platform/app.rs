@@ -31,11 +31,11 @@ use super::util::{
     WM_TABS_READY, WM_TRAY,
 };
 use super::{activate, enumerate, hooks, icons, overlay::Overlay, preview, settings, tray};
-use crate::geometry::{Area, Geometry, Level, Selection, DEAD_ZONE, INNER, OUTER, TAB_ARC};
-use crate::icon;
-use crate::model::{Icon, RingItem, RingModel, Target};
-use crate::render::{self, Motion, Scene, Style};
-use crate::text::Text;
+use radial_core::geometry::{Area, Geometry, Level, Selection, DEAD_ZONE, INNER, OUTER, TAB_ARC};
+use radial_core::icon;
+use radial_core::model::{Icon, RingItem, RingModel, Target};
+use radial_core::render::{self, Motion, Scene, Style};
+use radial_core::text::Text;
 
 const TRACK_TIMER: usize = 1;
 const TRACK_INTERVAL_MS: u32 = 8;
@@ -526,8 +526,8 @@ impl App {
 }
 
 fn windows_of(
-    front: &Option<crate::model::AppWindows>,
-    others: &[crate::model::AppWindows],
+    front: &Option<radial_core::model::AppWindows>,
+    others: &[radial_core::model::AppWindows],
 ) -> Vec<(isize, u32)> {
     front
         .iter()

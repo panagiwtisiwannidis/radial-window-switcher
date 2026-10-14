@@ -19,7 +19,7 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use super::enumerate;
 use super::util::WM_TABS_READY;
-use crate::model::TabInfo;
+use radial_core::model::TabInfo;
 
 const TABBED_APPS: &[&str] = &[
     "msedge.exe",

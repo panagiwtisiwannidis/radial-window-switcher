@@ -16,7 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::enumerate;
-use crate::model::Icon;
+use radial_core::model::Icon;
 
 const INTERVAL: Duration = Duration::from_secs(5);
 const MAX_WIDTH: i32 = 480;

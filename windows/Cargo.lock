@@ -195,10 +195,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "radial-switcher"
+name = "radial-core"
 version = "0.1.0"
 dependencies = [
  "fontdue",
+ "tiny-skia",
+]
+
+[[package]]
+name = "radial-switcher"
+version = "0.1.0"
+dependencies = [
+ "radial-core",
  "tiny-skia",
  "windows",
  "winresource",

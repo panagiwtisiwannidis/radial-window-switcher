@@ -21,7 +21,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use super::icons;
 use super::util::{from_wide, wide};
-use crate::model::{AppWindows, Icon, WindowRef};
+use radial_core::model::{AppWindows, Icon, WindowRef};
 
 const HIDDEN_CLASSES: &[&str] = &[
     "Progman",

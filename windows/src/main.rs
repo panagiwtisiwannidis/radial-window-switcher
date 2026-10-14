@@ -7,5 +7,5 @@ fn main() {
 
 #[cfg(not(windows))]
 fn main() {
-    eprintln!("Radial Switcher for Windows only runs on Windows. Try `cargo run --example preview` to render the ring.");
+    eprintln!("Radial Switcher for Windows only runs on Windows. See ../core for the shared ring code and its preview example.");
 }

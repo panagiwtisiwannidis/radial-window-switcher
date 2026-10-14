@@ -8,7 +8,13 @@ const FONT_PATHS: &[&str] = &[
     "C:\\Windows\\Fonts\\segoeui.ttf",
     "C:\\Windows\\Fonts\\arial.ttf",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+    "/usr/share/fonts/google-noto/NotoSans-Regular.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
 ];
 
 type GlyphCache = RefCell<HashMap<(char, u32), (Metrics, Vec<u8>)>>;
@@ -33,6 +39,10 @@ impl Text {
             .iter()
             .find_map(|path| std::fs::read(path).ok())
             .and_then(Self::from_bytes)
+    }
+
+    pub fn from_path(path: &str) -> Option<Self> {
+        std::fs::read(path).ok().and_then(Self::from_bytes)
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Option<Self> {

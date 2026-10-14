@@ -1,0 +1,22 @@
+[package]
+name = "radial-switcher-linux"
+version = "0.1.0"
+edition = "2021"
+description = "Radial window switcher for Linux (X11)"
+publish = false
+
+[[bin]]
+name = "radial-switcher"
+path = "src/main.rs"
+
+[dependencies]
+radial-core = { path = "../core" }
+tiny-skia = "0.11"
+x11rb = { version = "0.13", features = ["composite", "render", "randr", "xkb"] }
+ksni = { version = "0.3", features = ["blocking"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

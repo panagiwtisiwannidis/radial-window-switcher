@@ -1,0 +1,80 @@
+name: Linux build
+
+on:
+  push:
+    paths:
+      - "linux/**"
+      - "core/**"
+      - ".github/workflows/linux.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy
+
+      - name: Test shared core
+        working-directory: core
+        run: cargo test --release
+
+      - name: Lint
+        working-directory: linux
+        run: cargo clippy --release --all-targets -- -D warnings
+
+      - name: Build
+        working-directory: linux
+        run: cargo build --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: radial-switcher-linux
+          path: linux/target/release/radial-switcher
+          if-no-files-found: error
+
+      - name: Smoke test on a virtual X11 desktop
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb openbox xcompmgr xterm xdotool imagemagick fonts-dejavu-core > /dev/null
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1600x1000x24 +extension Composite +extension RANDR &
+          sleep 2
+          xsetroot -solid "#3b5b8a"
+          ./linux/target/release/radial-switcher > app.log 2>&1 &
+          sleep 2
+          openbox &
+          sleep 1
+          xcompmgr &
+          xterm -title "First terminal" -geometry 90x30+80+80 &
+          xterm -title "Second terminal" -geometry 90x30+700+300 &
+          sleep 3
+          mkdir -p shots
+          xdotool getactivewindow getwindowname > shots/active-before.txt || true
+          xdotool mousemove 800 520
+          sleep 0.5
+          xdotool keydown alt keydown space
+          sleep 1.5
+          import -window root shots/1-ring-open.png
+          xdotool mousemove 800 360
+          sleep 0.8
+          import -window root shots/2-inner-selected.png
+          xdotool mousemove 980 520
+          sleep 0.8
+          import -window root shots/3-outer-hover.png
+          xdotool mousemove 800 360
+          sleep 0.5
+          xdotool keyup space keyup alt
+          sleep 1.5
+          import -window root shots/4-after-switch.png
+          xdotool getactivewindow getwindowname > shots/active-after.txt || true
+          cp app.log shots/app.log
+          cat shots/app.log shots/active-before.txt shots/active-after.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-smoke-test
+          path: shots/

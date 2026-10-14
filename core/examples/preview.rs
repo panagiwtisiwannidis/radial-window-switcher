@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use radial_switcher::geometry::{Geometry, Selection};
-use radial_switcher::model::{AppWindows, Icon, RingItem, RingModel, TabInfo, WindowRef};
-use radial_switcher::render::{self, Motion, Scene, Style};
-use radial_switcher::text::Text;
+use radial_core::geometry::{Geometry, Selection};
+use radial_core::model::{AppWindows, Icon, RingItem, RingModel, TabInfo, WindowRef};
+use radial_core::render::{self, Motion, Scene, Style};
+use radial_core::text::Text;
 use tiny_skia::{
     Color, FillRule, GradientStop, LinearGradient, Paint, PathBuilder, Pixmap, Point, SpreadMode,
     Transform,

@@ -791,3 +791,74 @@ fn box_blur(pixmap: &mut Pixmap, radius: i32) {
         }
     }
 }
+
+pub const CARD_IMAGE: (f32, f32) = (440.0, 290.0);
+pub const CARD_PADDING: f32 = 12.0;
+pub const CARD_TITLE_HEIGHT: f32 = 30.0;
+
+pub fn card_size() -> (f32, f32) {
+    (
+        CARD_IMAGE.0 + 2.0 * CARD_PADDING,
+        CARD_IMAGE.1 + 2.0 * CARD_PADDING + CARD_TITLE_HEIGHT,
+    )
+}
+
+pub fn render_card(text: &Text, style: Style, title: &str, image: Option<&Pixmap>, icon: Option<&Pixmap>) -> Pixmap {
+    let scale = style.scale;
+    let (w, h) = card_size();
+    let (w, h) = ((w * scale).ceil() as u32, (h * scale).ceil() as u32);
+    let mut pixmap = Pixmap::new(w, h).expect("card size");
+    let radius = 18.0 * scale;
+    if let Some(shape) = tiny_skia::Rect::from_xywh(0.5, 0.5, w as f32 - 1.0, h as f32 - 1.0).and_then(|r| rounded_rect(r, radius)) {
+        let mut paint = Paint { anti_alias: true, ..Paint::default() };
+        paint.set_color(if style.dark { Color::from_rgba8(32, 33, 40, 242) } else { Color::from_rgba8(243, 244, 248, 245) });
+        pixmap.fill_path(&shape, &paint, FillRule::Winding, Transform::identity(), None);
+        paint.set_color(if style.dark { Color::from_rgba8(255, 255, 255, 50) } else { Color::from_rgba8(0, 0, 0, 30) });
+        pixmap.stroke_path(&shape, &paint, &Stroke { width: scale.max(1.0), ..Stroke::default() }, Transform::identity(), None);
+    }
+    let (box_x, box_y) = (CARD_PADDING * scale, CARD_PADDING * scale);
+    let (box_w, box_h) = (CARD_IMAGE.0 * scale, CARD_IMAGE.1 * scale);
+    let fitted = |source: &Pixmap, max: f32| {
+        let fit = (box_w / source.width().max(1) as f32).min(box_h / source.height().max(1) as f32).min(max);
+        let (iw, ih) = (source.width() as f32 * fit, source.height() as f32 * fit);
+        (fit, box_x + (box_w - iw) / 2.0, box_y + (box_h - ih) / 2.0)
+    };
+    match (image, icon) {
+        (Some(image), _) => {
+            let (fit, x, y) = fitted(image, f32::MAX);
+            let paint = PixmapPaint { quality: FilterQuality::Bilinear, ..PixmapPaint::default() };
+            pixmap.draw_pixmap(0, 0, image.as_ref(), &paint, Transform::from_scale(fit, fit).post_translate(x, y), None);
+        }
+        (None, Some(icon)) => {
+            let size = 96.0 * scale;
+            let fit = size / icon.width().max(1) as f32;
+            let x = box_x + (box_w - size) / 2.0;
+            let y = box_y + (box_h - size) / 2.0;
+            let paint = PixmapPaint { quality: FilterQuality::Bicubic, ..PixmapPaint::default() };
+            pixmap.draw_pixmap(0, 0, icon.as_ref(), &paint, Transform::from_scale(fit, fit).post_translate(x, y), None);
+        }
+        (None, None) => {}
+    }
+    let color = if style.dark { [245, 245, 248, 255] } else { [24, 24, 28, 255] };
+    let text_style = TextStyle { size: 14.0 * scale, color, max_width: box_w, max_lines: 1, shadow: false };
+    let top = h as f32 - (CARD_TITLE_HEIGHT + CARD_PADDING / 2.0) * scale + (CARD_TITLE_HEIGHT * scale - 14.0 * scale * 1.25) / 2.0;
+    text.draw_centered(&mut pixmap, title, w as f32 / 2.0, top, text_style);
+    pixmap
+}
+
+fn rounded_rect(rect: tiny_skia::Rect, radius: f32) -> Option<Path> {
+    let (x, y, r, b) = (rect.left(), rect.top(), rect.right(), rect.bottom());
+    let k = 0.552_284_8 * radius;
+    let mut pb = PathBuilder::new();
+    pb.move_to(x + radius, y);
+    pb.line_to(r - radius, y);
+    pb.cubic_to(r - radius + k, y, r, y + radius - k, r, y + radius);
+    pb.line_to(r, b - radius);
+    pb.cubic_to(r, b - radius + k, r - radius + k, b, r - radius, b);
+    pb.line_to(x + radius, b);
+    pb.cubic_to(x + radius - k, b, x, b - radius + k, x, b - radius);
+    pb.line_to(x, y + radius);
+    pb.cubic_to(x, y + radius - k, x + radius - k, y, x + radius, y);
+    pb.close();
+    pb.finish()
+}

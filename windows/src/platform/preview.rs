@@ -22,7 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
-use crate::model::Icon;
+use radial_core::model::Icon;
 
 pub const IMAGE_SIZE: (f32, f32) = (440.0, 290.0);
 pub const PADDING: f32 = 12.0;
