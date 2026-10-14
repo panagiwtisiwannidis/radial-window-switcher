@@ -423,6 +423,7 @@ impl State {
         overlay.card.surface.destroy();
         drop(overlay.layer);
         self.ring.end();
+        debug(|| "wayland: overlay closed".into());
         self.started = false;
         self.pending = None;
     }

@@ -60,12 +60,25 @@ test "$after" = "Second terminal"
 
 ./linux/target/release/radial-switcher show
 sleep 1.5
-wtype -k Tab
-sleep 0.5
-grim shots/wayland/4-tab-key.png
+wlrctl pointer move 0 45
+sleep 0.2
+wlrctl pointer move 0 45
+sleep 1
+grim shots/wayland/4-second-round.png
 wtype -k Return
 sleep 1.5
 again=$(focused)
-echo "wayland Tab + Enter: $after -> $again" | tee -a shots/wayland/result.txt
-cat shots/wayland/app.log
+echo "wayland most-recent order: $after -> $again" | tee -a shots/wayland/result.txt
 test "$again" = "First terminal"
+
+./linux/target/release/radial-switcher show
+sleep 1.5
+wlrctl pointer move 0 90
+sleep 1
+wtype -k Escape
+sleep 1
+grim shots/wayland/5-after-escape.png
+still=$(focused)
+echo "wayland Escape keeps: $still" | tee -a shots/wayland/result.txt
+cat shots/wayland/app.log
+test "$still" = "First terminal"
