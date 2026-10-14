@@ -7,6 +7,7 @@ pub const WM_RING_CONFIRM: u32 = WM_APP + 4;
 pub const WM_RING_CANCEL: u32 = WM_APP + 5;
 pub const WM_RING_CLICK: u32 = WM_APP + 6;
 pub const WM_TRAY: u32 = WM_APP + 7;
+pub const WM_TABS_READY: u32 = WM_APP + 8;
 
 pub const INJECTED_MARKER: usize = 0x5253_5754;
 

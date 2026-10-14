@@ -4,31 +4,52 @@ use std::ffi::c_void;
 use windows::core::{w, Result};
 use windows::Win32::Foundation::{BOOL, COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
-    DwmQueryThumbnailSourceSize, DwmRegisterThumbnail, DwmSetWindowAttribute, DwmUnregisterThumbnail,
-    DwmUpdateThumbnailProperties, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
-    DWM_THUMBNAIL_PROPERTIES, DWM_TNP_OPACITY, DWM_TNP_RECTDESTINATION, DWM_TNP_SOURCECLIENTAREAONLY, DWM_TNP_VISIBLE,
+    DwmQueryThumbnailSourceSize, DwmRegisterThumbnail, DwmSetWindowAttribute,
+    DwmUnregisterThumbnail, DwmUpdateThumbnailProperties, DWMWA_USE_IMMERSIVE_DARK_MODE,
+    DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWM_THUMBNAIL_PROPERTIES, DWM_TNP_OPACITY,
+    DWM_TNP_RECTDESTINATION, DWM_TNP_SOURCECLIENTAREAONLY, DWM_TNP_VISIBLE,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, FillRect, InvalidateRect,
-    SelectObject, SetBkMode, SetTextColor, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DT_CENTER,
-    DT_END_ELLIPSIS, DT_SINGLELINE, DT_VCENTER, OUT_DEFAULT_PRECIS, PAINTSTRUCT, TRANSPARENT,
+    BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, FillRect,
+    InvalidateRect, SelectObject, SetBkMode, SetStretchBltMode, SetTextColor, StretchDIBits,
+    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET,
+    DIB_RGB_COLORS, DT_CENTER, DT_END_ELLIPSIS, DT_SINGLELINE, DT_VCENTER, HALFTONE, HDC,
+    OUT_DEFAULT_PRECIS, PAINTSTRUCT, SRCCOPY, TRANSPARENT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, GetClientRect, RegisterClassExW, SetWindowPos, ShowWindow, HTTRANSPARENT,
-    HWND_TOPMOST, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WM_NCHITTEST, WM_PAINT, WNDCLASSEXW, WS_EX_NOACTIVATE,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, GetClientRect, RegisterClassExW, SetWindowPos, ShowWindow,
+    HTTRANSPARENT, HWND_TOPMOST, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WM_NCHITTEST, WM_PAINT,
+    WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
+
+use crate::model::Icon;
 
 pub const IMAGE_SIZE: (f32, f32) = (440.0, 290.0);
 pub const PADDING: f32 = 12.0;
 pub const TITLE_HEIGHT: f32 = 30.0;
 
 pub fn card_size() -> (f32, f32) {
-    (IMAGE_SIZE.0 + 2.0 * PADDING, IMAGE_SIZE.1 + 2.0 * PADDING + TITLE_HEIGHT)
+    (
+        IMAGE_SIZE.0 + 2.0 * PADDING,
+        IMAGE_SIZE.1 + 2.0 * PADDING + TITLE_HEIGHT,
+    )
 }
 
 thread_local! {
-    static CARD: RefCell<(Vec<u16>, f32, bool)> = const { RefCell::new((Vec::new(), 1.0, true)) };
+    static CARD: RefCell<Card> = const { RefCell::new(Card { title: Vec::new(), scale: 1.0, dark: true, image: None }) };
+}
+
+struct Card {
+    title: Vec<u16>,
+    scale: f32,
+    dark: bool,
+    image: Option<Icon>,
+}
+
+pub enum Content {
+    Live(isize),
+    Image(Icon),
+    Empty,
 }
 
 pub struct Preview {
@@ -63,15 +84,40 @@ impl Preview {
                 None,
             )?;
             let corner = DWMWCP_ROUND;
-            let _ = DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner as *const _ as *const c_void, 4);
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &corner as *const _ as *const c_void,
+                4,
+            );
             let dark = BOOL::from(true);
-            let _ = DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark as *const _ as *const c_void, 4);
-            Ok(Self { hwnd, thumbnail: Cell::new(None), source: Cell::new(0) })
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                &dark as *const _ as *const c_void,
+                4,
+            );
+            Ok(Self {
+                hwnd,
+                thumbnail: Cell::new(None),
+                source: Cell::new(0),
+            })
         }
     }
 
-    pub fn show(&self, source: isize, title: &str, frame: RECT, scale: f32, dark: bool) {
-        CARD.with(|card| *card.borrow_mut() = (title.encode_utf16().collect(), scale, dark));
+    pub fn show(&self, content: Content, title: &str, frame: RECT, scale: f32, dark: bool) {
+        let image = match &content {
+            Content::Image(image) => Some(image.clone()),
+            _ => None,
+        };
+        CARD.with(|card| {
+            *card.borrow_mut() = Card {
+                title: title.encode_utf16().collect(),
+                scale,
+                dark,
+                image,
+            }
+        });
         unsafe {
             let _ = SetWindowPos(
                 self.hwnd,
@@ -84,9 +130,14 @@ impl Preview {
             );
             let _ = InvalidateRect(self.hwnd, None, true);
         }
+        let Content::Live(source) = content else {
+            self.release_thumbnail();
+            return;
+        };
         if self.source.get() != source {
             self.release_thumbnail();
-            if let Ok(id) = unsafe { DwmRegisterThumbnail(self.hwnd, HWND(source as *mut c_void)) } {
+            if let Ok(id) = unsafe { DwmRegisterThumbnail(self.hwnd, HWND(source as *mut c_void)) }
+            {
                 self.thumbnail.set(Some(id));
                 self.source.set(source);
             }
@@ -111,19 +162,33 @@ impl Preview {
     }
 
     fn place_thumbnail(&self, scale: f32) {
-        let Some(id) = self.thumbnail.get() else { return };
-        let Ok(source) = (unsafe { DwmQueryThumbnailSourceSize(id) }) else { return };
+        let Some(id) = self.thumbnail.get() else {
+            return;
+        };
+        let Ok(source) = (unsafe { DwmQueryThumbnailSourceSize(id) }) else {
+            return;
+        };
         if source.cx <= 0 || source.cy <= 0 {
             return;
         }
         let (box_w, box_h) = (IMAGE_SIZE.0 * scale, IMAGE_SIZE.1 * scale);
-        let fit = (box_w / source.cx as f32).min(box_h / source.cy as f32).min(1.0);
+        let fit = (box_w / source.cx as f32)
+            .min(box_h / source.cy as f32)
+            .min(1.0);
         let (w, h) = (source.cx as f32 * fit, source.cy as f32 * fit);
         let left = PADDING * scale + (box_w - w) / 2.0;
         let top = PADDING * scale + (box_h - h) / 2.0;
         let properties = DWM_THUMBNAIL_PROPERTIES {
-            dwFlags: DWM_TNP_RECTDESTINATION | DWM_TNP_VISIBLE | DWM_TNP_OPACITY | DWM_TNP_SOURCECLIENTAREAONLY,
-            rcDestination: RECT { left: left as i32, top: top as i32, right: (left + w) as i32, bottom: (top + h) as i32 },
+            dwFlags: DWM_TNP_RECTDESTINATION
+                | DWM_TNP_VISIBLE
+                | DWM_TNP_OPACITY
+                | DWM_TNP_SOURCECLIENTAREAONLY,
+            rcDestination: RECT {
+                left: left as i32,
+                top: top as i32,
+                right: (left + w) as i32,
+                bottom: (top + h) as i32,
+            },
             opacity: 255,
             fVisible: true.into(),
             fSourceClientAreaOnly: false.into(),
@@ -139,16 +204,67 @@ fn rgb(r: u8, g: u8, b: u8) -> COLORREF {
     COLORREF(r as u32 | (g as u32) << 8 | (b as u32) << 16)
 }
 
+unsafe fn draw_image(dc: HDC, image: &Icon, scale: f32) {
+    let (width, height) = (image.width() as i32, image.height() as i32);
+    let (box_w, box_h) = (IMAGE_SIZE.0 * scale, IMAGE_SIZE.1 * scale);
+    let fit = (box_w / width as f32).min(box_h / height as f32);
+    let (w, h) = (width as f32 * fit, height as f32 * fit);
+    let left = PADDING * scale + (box_w - w) / 2.0;
+    let top = PADDING * scale + (box_h - h) / 2.0;
+    let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+    for p in image.data().chunks(4) {
+        pixels.extend_from_slice(&[p[2], p[1], p[0], 255]);
+    }
+    let info = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: width,
+            biHeight: -height,
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB.0,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    SetStretchBltMode(dc, HALFTONE);
+    StretchDIBits(
+        dc,
+        left as i32,
+        top as i32,
+        w as i32,
+        h as i32,
+        0,
+        0,
+        width,
+        height,
+        Some(pixels.as_ptr() as *const c_void),
+        &info,
+        DIB_RGB_COLORS,
+        SRCCOPY,
+    );
+}
+
 unsafe fn paint(hwnd: HWND) {
     let mut ps = PAINTSTRUCT::default();
     let dc = BeginPaint(hwnd, &mut ps);
-    let (title, scale, dark) = CARD.with(|card| card.borrow().clone());
+    let (title, scale, dark, image) = CARD.with(|card| {
+        let c = card.borrow();
+        (c.title.clone(), c.scale, c.dark, c.image.clone())
+    });
     let mut client = RECT::default();
     let _ = GetClientRect(hwnd, &mut client);
 
-    let background = if dark { CreateSolidBrush(rgb(32, 33, 40)) } else { CreateSolidBrush(rgb(243, 244, 248)) };
+    let background = if dark {
+        CreateSolidBrush(rgb(32, 33, 40))
+    } else {
+        CreateSolidBrush(rgb(243, 244, 248))
+    };
     FillRect(dc, &client, background);
     let _ = DeleteObject(background);
+    if let Some(image) = image {
+        draw_image(dc, &image, scale);
+    }
 
     let font = CreateFontW(
         -(14.0 * scale) as i32,
@@ -168,7 +284,14 @@ unsafe fn paint(hwnd: HWND) {
     );
     let previous = SelectObject(dc, font);
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, if dark { rgb(245, 245, 248) } else { rgb(24, 24, 28) });
+    SetTextColor(
+        dc,
+        if dark {
+            rgb(245, 245, 248)
+        } else {
+            rgb(24, 24, 28)
+        },
+    );
     let mut text_rect = RECT {
         left: client.left + (PADDING * scale) as i32,
         top: client.bottom - ((TITLE_HEIGHT + PADDING / 2.0) * scale) as i32,
@@ -176,13 +299,23 @@ unsafe fn paint(hwnd: HWND) {
         bottom: client.bottom - (PADDING / 2.0 * scale) as i32,
     };
     let mut title = title;
-    DrawTextW(dc, &mut title, &mut text_rect, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+    DrawTextW(
+        dc,
+        &mut title,
+        &mut text_rect,
+        DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS,
+    );
     SelectObject(dc, previous);
     let _ = DeleteObject(font);
     let _ = EndPaint(hwnd, &ps);
 }
 
-unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn window_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     match message {
         WM_PAINT => {
             paint(hwnd);

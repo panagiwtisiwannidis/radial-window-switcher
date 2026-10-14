@@ -144,10 +144,10 @@ Audio Recording.
 
 ## Windows
 
-The Windows version lives in [`windows/`](windows/README.md): Rust, hold **Alt+Space**, with live window
-previews and a tray icon. Prebuilt executables come from the **Windows build** GitHub Action.
+The Windows version lives in [`windows/`](windows/README.md): Rust, hold **Alt+Space**, with the same
+rings, window and tab arcs, live previews and a tray icon. Prebuilt executables come from the
+**Windows build** GitHub Action.
 
 ## Roadmap
 
-- Windows: browser tab arcs, thumbnails in the ring, animations.
 - Linux version (X11 first; Wayland needs per-desktop extensions), reusing the Windows version's ring logic.

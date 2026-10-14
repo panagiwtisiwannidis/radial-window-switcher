@@ -4,13 +4,14 @@ use tiny_skia::Pixmap;
 use windows::core::{w, Result};
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject, AC_SRC_ALPHA,
-    AC_SRC_OVER, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, DIB_RGB_COLORS,
+    CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject,
+    AC_SRC_ALPHA, AC_SRC_OVER, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, BLENDFUNCTION, DIB_RGB_COLORS,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, RegisterClassExW, SetWindowPos, ShowWindow, UpdateLayeredWindow, HWND_TOPMOST,
-    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE, SW_SHOWNOACTIVATE, ULW_ALPHA, WNDCLASSEXW, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, RegisterClassExW, SetWindowPos, ShowWindow,
+    UpdateLayeredWindow, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_HIDE,
+    SW_SHOWNOACTIVATE, ULW_ALPHA, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 pub struct Overlay {
@@ -29,7 +30,11 @@ impl Overlay {
             };
             RegisterClassExW(&class);
             let hwnd = CreateWindowExW(
-                WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                WS_EX_LAYERED
+                    | WS_EX_TRANSPARENT
+                    | WS_EX_TOPMOST
+                    | WS_EX_TOOLWINDOW
+                    | WS_EX_NOACTIVATE,
                 w!("RadialSwitcherOverlay"),
                 w!("Radial Switcher"),
                 WS_POPUP,
@@ -50,7 +55,15 @@ impl Overlay {
         unsafe {
             self.update(pixmap, left, top);
             let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
-            let _ = SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            let _ = SetWindowPos(
+                self.hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
         }
     }
 
@@ -78,8 +91,15 @@ impl Overlay {
         };
         let mut bits: *mut c_void = std::ptr::null_mut();
         if let Ok(bitmap) = CreateDIBSection(screen, &info, DIB_RGB_COLORS, &mut bits, None, 0) {
-            let target = std::slice::from_raw_parts_mut(bits as *mut u8, (width * height * 4) as usize);
-            for (src, dst) in pixmap.data().as_chunks::<4>().0.iter().zip(target.as_chunks_mut::<4>().0.iter_mut()) {
+            let target =
+                std::slice::from_raw_parts_mut(bits as *mut u8, (width * height * 4) as usize);
+            for (src, dst) in pixmap
+                .data()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(target.as_chunks_mut::<4>().0.iter_mut())
+            {
                 dst[0] = src[2];
                 dst[1] = src[1];
                 dst[2] = src[0];
@@ -96,7 +116,10 @@ impl Overlay {
                 self.hwnd,
                 screen,
                 Some(&POINT { x: left, y: top }),
-                Some(&SIZE { cx: width, cy: height }),
+                Some(&SIZE {
+                    cx: width,
+                    cy: height,
+                }),
                 memory,
                 Some(&POINT { x: 0, y: 0 }),
                 COLORREF(0),
@@ -111,6 +134,11 @@ impl Overlay {
     }
 }
 
-unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn window_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     DefWindowProcW(hwnd, message, wparam, lparam)
 }

@@ -49,19 +49,38 @@ pub struct Selection {
 
 impl Selection {
     pub fn inner(index: usize) -> Self {
-        Self { level: Level::Inner, index, window: None, tab: None, pointing: true }
+        Self {
+            level: Level::Inner,
+            index,
+            window: None,
+            tab: None,
+            pointing: true,
+        }
     }
 
     pub fn outer(index: usize) -> Self {
-        Self { level: Level::Outer, index, window: None, tab: None, pointing: true }
+        Self {
+            level: Level::Outer,
+            index,
+            window: None,
+            tab: None,
+            pointing: true,
+        }
     }
 
     pub fn window(app: usize, window: usize) -> Self {
-        Self { window: Some(window), ..Self::outer(app) }
+        Self {
+            window: Some(window),
+            ..Self::outer(app)
+        }
     }
 
     pub fn position(&self) -> Self {
-        Self { tab: None, pointing: true, ..*self }
+        Self {
+            tab: None,
+            pointing: true,
+            ..*self
+        }
     }
 }
 
@@ -105,7 +124,8 @@ impl Geometry {
         let angle = clockwise_angle_from_top(dx, dy);
         let outer_count = outer_window_counts.len();
 
-        if let Some(current) = current.filter(|c| c.level == Level::Outer && c.index < outer_count) {
+        if let Some(current) = current.filter(|c| c.level == Level::Outer && c.index < outer_count)
+        {
             let app = current.index;
             let window_count = outer_window_counts[app];
             let has_window_arc = window_count >= 2;
@@ -114,12 +134,26 @@ impl Geometry {
             } else {
                 Vec::new()
             };
-            let keep_current = Selection { tab: None, pointing: false, ..current };
+            let keep_current = Selection {
+                tab: None,
+                pointing: false,
+                ..current
+            };
 
-            if let Some(arc) = self.tab_arc(app, outer_count, current.window, &window_bounds, tab_count(app, current.window)) {
+            if let Some(arc) = self.tab_arc(
+                app,
+                outer_count,
+                current.window,
+                &window_bounds,
+                tab_count(app, current.window),
+            ) {
                 if distance > arc.inner_edge && distance <= arc.radii.1 + OUTSIDE_SLACK {
                     return Some(match fan_index(angle, &arc.bounds) {
-                        Some(tab) => Selection { tab: Some(tab), pointing: true, ..current },
+                        Some(tab) => Selection {
+                            tab: Some(tab),
+                            pointing: true,
+                            ..current
+                        },
                         None => keep_current,
                     });
                 }
@@ -168,14 +202,30 @@ impl Geometry {
         fan_index(angle, &bounds).map(Selection::outer)
     }
 
-    pub fn window_arc_bounds(&self, app: usize, app_count: usize, window_count: usize) -> Vec<Bounds> {
+    pub fn window_arc_bounds(
+        &self,
+        app: usize,
+        app_count: usize,
+        window_count: usize,
+    ) -> Vec<Bounds> {
         let center = app as f32 * 2.0 * PI / app_count as f32;
-        self.on_screen(fan(center, window_count, WINDOW_ARC_SEGMENT, WIDE_FAN_MAX_SPAN), WINDOW_ARC.1)
+        self.on_screen(
+            fan(center, window_count, WINDOW_ARC_SEGMENT, WIDE_FAN_MAX_SPAN),
+            WINDOW_ARC.1,
+        )
     }
 
-    pub fn tab_popup_bounds(&self, inner_index: usize, inner_count: usize, tab_count: usize) -> Vec<Bounds> {
+    pub fn tab_popup_bounds(
+        &self,
+        inner_index: usize,
+        inner_count: usize,
+        tab_count: usize,
+    ) -> Vec<Bounds> {
         let center = inner_index as f32 * 2.0 * PI / inner_count as f32;
-        self.on_screen(fan(center, tab_count, TAB_POPUP_SEGMENT, WIDE_FAN_MAX_SPAN), TAB_POPUP.1)
+        self.on_screen(
+            fan(center, tab_count, TAB_POPUP_SEGMENT, WIDE_FAN_MAX_SPAN),
+            TAB_POPUP.1,
+        )
     }
 
     pub fn tab_arc(
@@ -191,7 +241,12 @@ impl Geometry {
         }
         if window_bounds.is_empty() {
             let center = app as f32 * 2.0 * PI / app_count as f32;
-            let bounds = fan(center, tab_count, SINGLE_WINDOW_TAB_ARC_SEGMENT, WIDE_FAN_MAX_SPAN);
+            let bounds = fan(
+                center,
+                tab_count,
+                SINGLE_WINDOW_TAB_ARC_SEGMENT,
+                WIDE_FAN_MAX_SPAN,
+            );
             return Some(TabArc {
                 radii: SINGLE_WINDOW_TAB_ARC,
                 inner_edge: OUTER.1,
@@ -199,19 +254,32 @@ impl Geometry {
             });
         }
         let window = window.filter(|w| *w < window_bounds.len())?;
-        let bounds = fan(window_bounds[window].mid(), tab_count, TAB_ARC_SEGMENT, WIDE_FAN_MAX_SPAN);
-        Some(TabArc { radii: TAB_ARC, inner_edge: WINDOW_ARC.1, bounds: self.on_screen(bounds, TAB_ARC.1) })
+        let bounds = fan(
+            window_bounds[window].mid(),
+            tab_count,
+            TAB_ARC_SEGMENT,
+            WIDE_FAN_MAX_SPAN,
+        );
+        Some(TabArc {
+            radii: TAB_ARC,
+            inner_edge: WINDOW_ARC.1,
+            bounds: self.on_screen(bounds, TAB_ARC.1),
+        })
     }
 
     fn on_screen(&self, bounds: Vec<Bounds>, outer_radius: f32) -> Vec<Bounds> {
-        let Some(area) = self.visible else { return bounds };
+        let Some(area) = self.visible else {
+            return bounds;
+        };
         if bounds.is_empty() {
             return bounds;
         }
         let radius = outer_radius + POP_OUT_ALLOWANCE;
         let fits = |shift: f32| {
             bounds.iter().all(|b| {
-                [b.start, b.mid(), b.end].iter().all(|a| area.contains(radius * (a + shift).sin(), radius * (a + shift).cos()))
+                [b.start, b.mid(), b.end]
+                    .iter()
+                    .all(|a| area.contains(radius * (a + shift).sin(), radius * (a + shift).cos()))
             })
         };
         if fits(0.0) {
@@ -221,7 +289,13 @@ impl Geometry {
             let shift = step as f32 * 0.05;
             for candidate in [shift, -shift] {
                 if fits(candidate) {
-                    return bounds.iter().map(|b| Bounds { start: b.start + candidate, end: b.end + candidate }).collect();
+                    return bounds
+                        .iter()
+                        .map(|b| Bounds {
+                            start: b.start + candidate,
+                            end: b.end + candidate,
+                        })
+                        .collect();
                 }
             }
         }
@@ -231,7 +305,11 @@ impl Geometry {
 
 pub fn clockwise_angle_from_top(dx: f32, dy: f32) -> f32 {
     let angle = dx.atan2(dy);
-    if angle < 0.0 { angle + 2.0 * PI } else { angle }
+    if angle < 0.0 {
+        angle + 2.0 * PI
+    } else {
+        angle
+    }
 }
 
 pub fn segment_index(angle: f32, count: usize) -> usize {
@@ -242,14 +320,20 @@ pub fn segment_index(angle: f32, count: usize) -> usize {
 pub fn segment_bounds(index: usize, count: usize) -> Bounds {
     let segment = 2.0 * PI / count as f32;
     let mid = index as f32 * segment;
-    Bounds { start: mid - segment / 2.0, end: mid + segment / 2.0 }
+    Bounds {
+        start: mid - segment / 2.0,
+        end: mid + segment / 2.0,
+    }
 }
 
 pub fn fan(center: f32, count: usize, segment: f32, max_span: f32) -> Vec<Bounds> {
     let segment = segment.min(max_span / count as f32);
     let start = center - segment * count as f32 / 2.0;
     (0..count)
-        .map(|i| Bounds { start: start + i as f32 * segment, end: start + (i + 1) as f32 * segment })
+        .map(|i| Bounds {
+            start: start + i as f32 * segment,
+            end: start + (i + 1) as f32 * segment,
+        })
         .collect()
 }
 
@@ -281,7 +365,13 @@ mod tests {
         0
     }
 
-    fn select(dx: f32, dy: f32, inner: usize, outer: &[usize], current: Option<Selection>) -> Option<Selection> {
+    fn select(
+        dx: f32,
+        dy: f32,
+        inner: usize,
+        outer: &[usize],
+        current: Option<Selection>,
+    ) -> Option<Selection> {
         Geometry::default().selection(dx, dy, inner, outer, &no_tabs, current)
     }
 
@@ -301,8 +391,14 @@ mod tests {
 
     #[test]
     fn rings_are_picked_by_distance() {
-        assert_eq!(select(0.0, 90.0, 3, &[1, 1, 1, 1], None), Some(Selection::inner(0)));
-        assert_eq!(select(170.0, 0.0, 3, &[1, 1, 1, 1], None), Some(Selection::outer(1)));
+        assert_eq!(
+            select(0.0, 90.0, 3, &[1, 1, 1, 1], None),
+            Some(Selection::inner(0))
+        );
+        assert_eq!(
+            select(170.0, 0.0, 3, &[1, 1, 1, 1], None),
+            Some(Selection::outer(1))
+        );
     }
 
     #[test]
@@ -316,7 +412,10 @@ mod tests {
     fn off_the_window_arc_keeps_the_app_without_pointing() {
         let current = Some(Selection::outer(0));
         let picked = select(269.0, 0.0, 2, &[3, 1, 1, 1], current).unwrap();
-        assert_eq!((picked.level, picked.index, picked.pointing), (Level::Outer, 0, false));
+        assert_eq!(
+            (picked.level, picked.index, picked.pointing),
+            (Level::Outer, 0, false)
+        );
     }
 
     #[test]
@@ -329,7 +428,14 @@ mod tests {
 
     #[test]
     fn arcs_rotate_back_on_screen_near_an_edge() {
-        let geometry = Geometry { visible: Some(Area { min_x: -900.0, min_y: -900.0, max_x: 900.0, max_y: 120.0 }) };
+        let geometry = Geometry {
+            visible: Some(Area {
+                min_x: -900.0,
+                min_y: -900.0,
+                max_x: 900.0,
+                max_y: 120.0,
+            }),
+        };
         let bounds = geometry.window_arc_bounds(0, 8, 3);
         let radius = WINDOW_ARC.1 + POP_OUT_ALLOWANCE;
         for b in &bounds {
@@ -340,7 +446,13 @@ mod tests {
     #[test]
     fn tab_popup_selects_tabs_past_the_inner_ring() {
         let geometry = Geometry::default();
-        assert_eq!(geometry.tab_popup_selection(0.0, 260.0, 2, 0, 5), Some(Selection::outer(2)));
-        assert_eq!(geometry.tab_popup_selection(0.0, 90.0, 2, 0, 5), Some(Selection::inner(0)));
+        assert_eq!(
+            geometry.tab_popup_selection(0.0, 260.0, 2, 0, 5),
+            Some(Selection::outer(2))
+        );
+        assert_eq!(
+            geometry.tab_popup_selection(0.0, 90.0, 2, 0, 5),
+            Some(Selection::inner(0))
+        );
     }
 }
