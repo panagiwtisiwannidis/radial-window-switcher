@@ -120,4 +120,4 @@ The ring itself (layout, selection, drawing) is shared with the Windows version 
 
 ## License
 
-Copyright © 2026 Panagiotis Ioannidis. All rights reserved. See [LICENSE](../LICENSE).
+Copyright © 2026 Panagiotis Ioannidis. Released under the [MIT License](../LICENSE).

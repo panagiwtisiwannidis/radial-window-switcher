@@ -168,8 +168,5 @@ The ring layout, selection logic and drawing shared by Windows and Linux live in
 
 ## License
 
-Copyright © 2026 Panagiotis Ioannidis. All rights reserved.
-
-The source is public for reference only: using, copying, modifying or
-distributing it requires written permission. See [LICENSE](LICENSE). Want to
-help? See [CONTRIBUTING.md](CONTRIBUTING.md).
+Copyright © 2026 Panagiotis Ioannidis. Released under the [MIT License](LICENSE).
+Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -94,4 +94,4 @@ cargo check --target x86_64-pc-windows-msvc   # type-check the Windows code from
 
 ## License
 
-Copyright © 2026 Panagiotis Ioannidis. All rights reserved. See [LICENSE](../LICENSE).
+Copyright © 2026 Panagiotis Ioannidis. Released under the [MIT License](../LICENSE).

@@ -10,7 +10,7 @@ fn main() {
             .set("CompanyName", "Panagiotis Ioannidis")
             .set(
                 "LegalCopyright",
-                "© 2026 Panagiotis Ioannidis. All rights reserved.",
+                "© 2026 Panagiotis Ioannidis. MIT License.",
             );
         resource.compile().expect("compile Windows resources");
     }

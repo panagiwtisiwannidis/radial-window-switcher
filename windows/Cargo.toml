@@ -2,7 +2,7 @@
 name = "radial-switcher"
 version = "0.1.0"
 edition = "2021"
-license-file = "../LICENSE"
+license = "MIT"
 description = "Radial window switcher for Windows"
 publish = false
 

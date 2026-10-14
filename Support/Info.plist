@@ -29,7 +29,7 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>© 2026 Panagiotis Ioannidis. All rights reserved.</string>
+    <string>© 2026 Panagiotis Ioannidis. MIT License.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
 </dict>
