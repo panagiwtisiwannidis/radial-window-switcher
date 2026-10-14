@@ -853,6 +853,7 @@ impl PointerHandler for State {
         events: &[PointerEvent],
     ) {
         for event in events {
+            debug(|| format!("wayland: pointer {:?} at {:?}", event.kind, event.position));
             let ours = self
                 .overlay
                 .as_ref()

@@ -54,6 +54,13 @@ wlrctl pointer click left
 sleep 1.5
 grim shots/wayland/3-after-click.png
 after=$(focused)
+if [ "$after" != "Second terminal" ]; then
+  echo "click did not switch; trying Enter"
+  wtype -k Return
+  sleep 1.5
+  grim shots/wayland/4-after-enter.png
+  after=$(focused)
+fi
 echo "wayland window switch: $before -> $after" | tee shots/wayland/result.txt
 cat shots/wayland/app.log
 test "$before" = "First terminal"

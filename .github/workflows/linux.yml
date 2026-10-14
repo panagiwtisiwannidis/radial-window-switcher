@@ -47,7 +47,7 @@ jobs:
       - name: Smoke test on a headless Wayland compositor (Sway)
         if: always()
         run: |
-          sudo apt-get install -y -qq sway foot grim wlrctl jq > /dev/null
+          sudo apt-get install -y -qq sway foot grim wlrctl wtype jq > /dev/null
           bash -eux .github/wayland-smoke-test.sh
 
       - uses: actions/upload-artifact@v4
