@@ -106,7 +106,6 @@ iconutil -c icns /tmp/AppIcon.iconset -o Support/AppIcon.icns
 | `Sources/RadialSwitcher/` | The app (Swift, AppKit + SwiftUI) |
 | `Support/Info.plist`, `Support/AppIcon.icns` | App bundle metadata and icon |
 | `scripts/build-app.sh` | Build, package, sign, install |
-| `radial-window-switcher-spec.md` | Original design spec |
 
 ## Notes
 
